@@ -1,0 +1,23 @@
+# Environment for HQ sourcing, degradation synthesis and quality analysis: .venv-iqa (Python 3.11)
+#   uv venv -p 3.11 .venv-iqa
+#   uv pip install -p .venv-iqa torch torchvision --index-url https://download.pytorch.org/whl/cu128   # RTX 5090 needs cu128
+#   uv pip install -p .venv-iqa -r requirements/ml.txt
+# DOVER weights: third_party/DOVER/pretrained_weights/DOVER.pth (https://huggingface.co/teowu/DOVER)
+pyiqa
+decord
+opencv-python-headless
+numpy<2
+pandas
+openpyxl
+scipy
+scikit-image
+PyWavelets
+pyyaml
+timm
+einops
+scikit-video
+tqdm
+matplotlib
+scenedetect
+remotezip
+gdown

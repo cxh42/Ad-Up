@@ -1,0 +1,12 @@
+# environments
+.venv/
+.venv-iqa/
+__pycache__/
+*.pyc
+
+# secrets
+.env
+
+# large data and generated outputs (see README for how to rebuild)
+data/
+outputs/

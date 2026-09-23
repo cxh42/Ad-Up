@@ -1,0 +1,8 @@
+[submodule "third_party/DOVE"]
+	path = third_party/DOVE
+	url = https://github.com/zhengchen1999/DOVE.git
+	ignore = untracked
+[submodule "third_party/DOVER"]
+	path = third_party/DOVER
+	url = https://github.com/VQAssessment/DOVER.git
+	ignore = untracked
