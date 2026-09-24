@@ -2,10 +2,10 @@
 
 The first results page embeds the ads' JSON (about 30 ads per query), including `video_hd_url` (the 720p file Meta
 serves) and `publisher_platform` (Facebook / Instagram / Audience Network / Messenger / Threads). We load one page
-per keyword in headless Chrome and parse that JSON. See meta_adlib.py for the token-based API route.
+per keyword in headless Chrome and parse that JSON.
 
 Usage (from the repo root):  .venv/bin/python -m adup.real_ads.meta_adlib_web [--queries q1 q2 ...] [--per-query N]
-Output: data/ads/meta_adlib_web/<date>/videos/<query>/*.mp4, summary.csv
+Output: data/real_ads/meta_adlib_web/<date>/videos/<query>/*.mp4, summary.csv
 """
 
 import argparse

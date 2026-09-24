@@ -1,14 +1,16 @@
 """Turn HQ sources into UGC-ad edit specs (JSONL) for adup.make_pairs: one ad per HQ clip, edited like a creator.
 
 For each HQ clip the director plans a short vertical (or square / landscape) ad the way UGC ads are cut:
-  - target aspect: 9:16 when the source can supply it at the GT size, otherwise 9:16 through a layout (landscape clip
-    in a blurred frame, or split / duet of two moments), or 16:9 / 4:5 / 1:1 (config weights, never upscaling)
+  - target aspect from config weights (Meta's mix, mostly 9:16), never upscaling: 9:16 at the GT size when the source
+    can supply it, else the largest portrait crop it allows (>= gt.portrait_min_short: 1214x2158 from 4K landscape,
+    written to the spec as gt_short); landscape clips become a portrait layout (clip in a blurred frame, or a split of
+    two moments) at the rate layouts appear in real ads
   - shots: the clip is cut into sub-shots with lengths drawn from real TikTok shots; consecutive sub-shots are joined
     by jump cuts (a few frames of the source are skipped, as creators cut pauses) and alternate between normal
     framing and punch-in zooms (1.12-1.3x, taken from real source pixels)
   - handheld shake: a target shake is drawn from real ads (adup.analysis.ugc_look on TikTok / Meta) and only the
     part the source does not already have (gate CSV src_shake) is added by the virtual camera
-  - optional extras: an opening text slide (hook), a product still of the same theme, a picture-in-picture reaction,
+  - optional extras: an opening text slide (hook), a closing call-to-action card, a product still of the same theme, a picture-in-picture reaction,
     phone screen recordings (app ads: ~15% of real ad frames), alone or with the creator's face in a corner
   - transitions mostly hard cuts, otherwise dissolve / whip / dip (rendered by adup.ugc.sequence)
 All knobs are in config section ugc.director (configs/pairs/<version>.yaml). Text overlays and the phone look are
@@ -33,13 +35,15 @@ import numpy as np
 import pandas as pd
 
 from adup.config import add_config_args, load_config
-from adup.media import gt_geometry, max_crop, probe
+from adup.media import gt_geometry, max_gt_short, probe
 from adup.paths import CLIPS_TABLE, COVERAGE_TABLE, HQ, LOOK_TABLE, POOL_TABLE, SHOTS_TABLE
 
 SEQ_FPS = 30
 HOOKS = ["wait for it", "POV: you finally found it", "3 reasons you need this", "I was today years old", "don't skip this",
          "this changed everything", "honest review", "run don't walk", "day 1 vs day 30", "the viral one", "before vs after",
          "is it worth it?", "ok but why is no one talking about this", "watch till the end", "my holy grail"]
+CTAS = ["Shop now", "Link in bio", "Tap to shop", "Get yours today", "Download now", "Order now, free shipping",
+        "Try it risk-free", "Limited time offer", "Available now", "Use code SAVE20", "Sign up today", "Learn more"]
 
 SHAKE_GAIN = 1.07      # measured shake_rms per unit of planned camera shake (calibrated on a static still)
 
@@ -56,11 +60,6 @@ def real_shake():
 def shot_lengths():
     s = pd.read_csv(SHOTS_TABLE)
     return (s.frames * SEQ_FPS / s.fps).round().astype(int).clip(lower=10).tolist()
-
-
-def feasible(sw, sh, aspect, gt_short, scale):
-    gw, gh, _, _ = gt_geometry(aspect, gt_short, scale)
-    return max_crop(sw, sh, gw, gh)[0] >= gw
 
 
 # stills that fit next to a clip of each UltraVideo category (themes from adup.analysis.ugc_content)
@@ -124,17 +123,20 @@ def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames,
     sw, sh, fps, nb = probe(clip.file)
     avail = int((nb or clip.frames) * SEQ_FPS / fps)
     total = min(max_frames, int(avail * 0.85))
-    ok = {a: w for a, w in cfg["aspects"].items() if feasible(sw, sh, a, gt_short, scale)}
+    # GT short side per aspect: --gt-short, or for 9:16 the largest portrait crop the source allows (>= portrait_min_short)
+    sizes = {a: max_gt_short(sw, sh, a, gt_short, scale, (a == "9:16" and cfg["_portrait_min_short"]) or gt_short)
+             for a in cfg["aspects"]}
+    ok = {a: w for a, w in cfg["aspects"].items() if sizes[a]}
     want = rng.choice(list(cfg["aspects"]), p=np.array(list(cfg["aspects"].values())) / sum(cfg["aspects"].values()))
     layout = None
-    if want not in ok:
-        if want == "9:16" and sw > sh and rng.random() < cfg["portrait_layout_prob"]:
-            lay = cfg["portrait_layouts"]
-            layout = rng.choice(list(lay), p=np.array(list(lay.values())) / sum(lay.values()))
-        elif ok:
-            want = rng.choice(list(ok), p=np.array(list(ok.values())) / sum(ok.values()))
-        else:
+    if want == "9:16" and sw > sh and rng.random() < cfg["portrait_layout_prob"]:
+        lay = cfg["portrait_layouts"]                 # a landscape clip in a portrait layout, at the real layout rate
+        layout = rng.choice(list(lay), p=np.array(list(lay.values())) / sum(lay.values()))
+    elif want not in ok:
+        if not ok:
             return None
+        want = rng.choice(list(ok), p=np.array(list(ok.values())) / sum(ok.values()))
+    ad_gt_short = gt_short if layout else sizes[want]
     src_shake = getattr(clip, "src_shake", np.nan)
     src_pan = getattr(clip, "src_pan", np.nan)
     if np.isnan(src_shake):                                   # no gate measurement: fall back to the metadata
@@ -157,6 +159,8 @@ def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames,
         n = int(rng.integers(20, 45))
         shots.append({"kind": "slide", "frames": n, "text": str(rng.choice(HOOKS))})
         used += n
+    end_card = int(rng.integers(20, 45)) if rng.random() < cfg.get("end_card_prob", 0) else 0     # CTA card at the end
+    total -= end_card
     zoomed = rng.random() < 0.5
     p_screen = cfg["screen_ad_prob"] * (4 if theme == "tech_app" else 1)          # app ads are mostly screen recordings
     screen_ad = want == "9:16" and screens is not None and len(screens) and rng.random() < p_screen
@@ -213,8 +217,15 @@ def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames,
         zoomed = not zoomed
     if not shots or sum(1 for s in shots if s["kind"] != "slide") == 0:
         return None
-    return {"aspect": str(want), "shots": shots, "transitions": transitions, "frames": used, "portrait_layout": layout,
+    if end_card:
+        transitions.append({"type": "cut", "frames": 0})
+        shots.append({"kind": "slide", "frames": end_card, "text": str(rng.choice(CTAS))})
+        used += end_card
+    plan = {"aspect": str(want), "shots": shots, "transitions": transitions, "frames": used, "portrait_layout": layout,
             "shake_target": round(target, 3), "src_shake": round(float(src_shake), 3)}
+    if ad_gt_short != gt_short:
+        plan["gt_short"] = int(ad_gt_short)       # reduced portrait GT (max crop of a 4K landscape clip)
+    return plan
 
 
 def main():
@@ -234,7 +245,8 @@ def main():
     ap.add_argument("--out", required=True, help="specs file, normally data/pairs/<dataset>/specs.jsonl")
     add_config_args(ap)
     args = ap.parse_args()
-    cfg = {**load_config(args.config, args.set)["ugc"]["director"], "_real_shake": real_shake()}
+    config = load_config(args.config, args.set)
+    cfg = {**config["ugc"]["director"], "_real_shake": real_shake(), "_portrait_min_short": config["gt"].get("portrait_min_short")}
     rng = np.random.default_rng(args.seed)
 
     clips = pd.concat([pd.read_csv(m) for m in args.clips], ignore_index=True)

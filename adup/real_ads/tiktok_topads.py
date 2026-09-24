@@ -5,7 +5,7 @@ Chrome, reuse its signed headers for direct API calls, and refresh them if the A
 Anonymous users only get page 1 (<= 20 ads) per query, so we widen the pool by querying several sort orders.
 
 Usage (from the repo root):  .venv/bin/python -m adup.real_ads.tiktok_topads [--industries a b ...] [--per-industry N]
-Output: data/ads/tiktok_topads/<date>/videos/<industry>/*.mp4, summary.csv/.xlsx, raw.json
+Output: data/real_ads/tiktok_topads/<date>/videos/<industry>/*.mp4, summary.csv/.xlsx, raw.json
 """
 
 import argparse

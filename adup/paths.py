@@ -47,7 +47,7 @@ LOGS = OUTPUTS / "logs"
 
 # ---------------------------------------------------------------- in git
 CONFIGS = ROOT / "configs"
-PAIR_CONFIG = CONFIGS / "pairs" / "v5.yaml"          # current dataset config (GT gate, UGC-ification, degradation)
+PAIR_CONFIG = CONFIGS / "pairs" / "v6.yaml"          # current dataset config (GT gate, UGC-ification, degradation)
 THIRD_PARTY = ROOT / "third_party"
 
 # All outbound traffic goes through the local proxy; override with ADUP_PROXY="" to disable.

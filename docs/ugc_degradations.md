@@ -31,8 +31,7 @@ TikTok 和 Meta 的画质非常接近。用 `adup/analysis/compare.py` 比较两
 
 两者只在块效应上有明显差异：Meta 略重，噪声也略少，说明平滑更多。
 YouTube 在编码器上差别最大：它有真正的 1080p 档位，VP9/AV1 的伪影以涂抹、振铃和细节丢失为主，
-而不是 H.264 那种方块。Meta 也会在 App 里向部分 iPhone 和 Android 设备推 AV1 版本（见参考文献），
-但广告库里下载到的只有 H.264 文件。
+而不是 H.264 那种方块。Meta 在 App 里超过 70% 的观看是 AV1，但广告库里下载到的只有 basic H.264 文件（见 1.1）。
 
 TikTok 的其他实测结果：
 - **"1080p" 版本**：是放大出来的。对齐视场后与 720p 版本看起来一样，MUSIQ 从 65 降到 58。
@@ -45,6 +44,45 @@ TikTok 的其他实测结果：
 - **抖音、快手、小红书**：官方推荐上传 1080x1920，支持 H.265，大文件或高码率会被降级压缩。
   字节系在国内用自研的 BVC/ByteVC1 编码器。
 - **Snapchat、Pinterest**：没有公开的视频广告库，暂时拿不到样本。
+
+### 1.1 Meta：我们抓到的文件和用户手机上看到的不一样（2026-09-24 调查）
+
+**我们抓到的是什么**。Ad Library 每条广告给 4 个视频地址：`video_hd_url`、`video_sd_url` 和两个带水印的版本。
+地址的 `efg` 参数里有 Meta 内部的编码标签。重新抓取 57 条广告解码后：
+- 55 条的 HD 文件标签是 `dash_h264-basic-gen2_720p`，即上传后立刻生成的 **basic H.264 多码率族里的 720p 档**；
+  SD 文件是同一族的 360p 档。
+- 短边被卡在 720，源更小时才是 576（我们下载的 64 条里 55 条是 720x1280）。
+  所以"广告是 576–720p"只是 Ad Library 的下载上限，**不代表广告主上传的分辨率**。Meta 推荐广告主上传 1080x1920。
+
+**用户手机上实际看到的是什么**（Meta 官方资料，见文末参考文献）：
+1. 上传后立刻生成 basic H.264 各档（360p / 480p / 720p / 1080p，快速预设）。我们抓的就是其中 720p 那一档。
+2. 预计观看量高的视频（广告的曝光量通常很高）再做 advanced 编码：VP9、AV1，每档分辨率 × 多个 CRF，
+   按凸包选最优组合。**2025 年 Meta 全家 App 超过 70% 的视频观看是 AV1。**
+   Instagram 还会按观看量调节画质：看的人少的视频会被降到低画质版本。
+3. 播放时按网速和屏幕选档（360p–1080p），手机解码后再放大到屏幕：
+   按设备能力用 bicubic / Lanczos 着色器、Meta 自研或 basicVSR++ 模型（ExecuTorch），iPhone 上用 Apple MetalFX（例：540p→1080p）。
+4. 服务端：Meta 在**入库时**对低质量视频做超分，生成高分辨率源，再做上面的多码率编码。
+   低质量来源有三类：低质量相机拍的 UGC、从其他平台下载后转发的内容、历史低分辨率内容。
+
+**对我们的影响**：用户看到的主要是 AV1（涂抹、振铃、细节丢失为主），分辨率随网速变化，最后还被手机放大或增强；
+我们校准用的 Ad Library 文件是 basic H.264 720p（块效应为主）。模型放在哪一环决定了 LQ 应该长什么样：
+
+| 模型位置 | 输入 | LQ 应该模拟 |
+|---|---|---|
+| 入库端（服务端，上传后、多码率编码前） | 广告主上传的原片 | 拍摄 → 剪辑导出 → （有时）从 TikTok 等平台下载转发 → 上传。**不应再叠加 Meta 自己的转码**；Ad Library 文件比这个输入多一代 H.264 |
+| 播放端（手机上） | 某一档 ABR 码流 | AV1 为主，360p–1080p 各档都有 |
+
+DOVE 是 5B 参数的扩散模型，只能跑在服务端，和 Meta 已经部署的入库端超分同一个位置。
+所以更可能的目标是入库端：需要按"广告主上传的原片"重新定义 LQ，而现在的退化链把 Meta 平台转码也算了进去。
+
+### 1.2 平台范围：以 Meta 为主
+
+- **Meta 自己的版位共用一套编码系统**：Facebook、Instagram、Messenger、Threads、Audience Network
+  （151 条广告里分别投放了 149 / 151 / 84 / 66 / 57 条，一条广告通常同时投多个版位），不需要分开建模。
+- **其他平台对 Meta 的意义主要是"上游"**：创作者和品牌常把为 TikTok 做的素材、或从 TikTok / Instagram 下载的视频投到 Meta，
+  Meta 列出的低质量来源里就有"从其他平台下载后转发的内容"。所以 TikTok、YouTube Shorts、Snapchat、快手 / 抖音
+  应作为转发链路里的一代编码来模拟，而不是独立的目标平台。
+- 画幅按 Meta 广告的分布（`configs/pairs/v6.yaml`）：9:16 约 80%，4:5、1:1、16:9 各占少量。
 
 ## 2. 文字叠加（字幕、标题、贴纸）
 
@@ -167,7 +205,7 @@ TikTok 的其他实测结果：
 
 ## 5. 流程的覆盖情况
 
-入口是 `adup/make_pairs.py`，参数都在 `configs/pairs/v5.yaml`（括号里是对应的段）。
+入口是 `adup/make_pairs.py`，参数都在 `configs/pairs/v6.yaml`（括号里是对应的段）。
 
 | 环节 | 已实现 | 尚未实现 |
 |---|---|---|
@@ -254,6 +292,11 @@ VP9/AV1/HEVC 的 CRF 范围（36–50 / 40–55 / 24–32）是在 GT 上扫 CRF
 - KwaiVIR，短视频 UGC 视频修复（NTIRE 2026）：https://arxiv.org/abs/2604.10551
 - YouTube UGC 数据集，用于压缩研究：https://arxiv.org/abs/1904.06457
 - Meta 在 Reels 上使用 AV1：https://engineering.fb.com/2023/02/21/video-engineering/av1-codec-facebook-instagram-reels/
+- Facebook 的编码流程（basic ABR 与按观看量选择 advanced 编码）：https://engineering.fb.com/2021/04/05/video-engineering/how-facebook-encodes-your-videos/
+- Meta / Vodafone / YouTube AV1 白皮书（2025-09，">70% of global video watch on the Meta Family of Apps is AV1"）：https://engineering.fb.com/wp-content/uploads/2025/09/Meta-AV1-White-Paper-FINAL.pdf
+- Meta 在入库端和播放端部署视频超分：https://atscaleconference.com/how-meta-deployed-super-resolution-at-scale-to-transform-video-quality/
+- Meta 播放端放大（着色器、ExecuTorch 模型、MetalFX）：https://atscaleconference.com/on-device-video-playback-upsampling/
+- Instagram 按观看量调节视频画质：https://techcrunch.com/2024/10/27/instagram-is-lowering-video-quality-for-unpopular-videos
 - Hormozi 风格字幕的字体与配色：https://www.submagic.co/blog/how-to-make-alex-hormozi-captions
 - TikTok 字幕样式汇总：https://blitzcutai.com/blog/best-caption-style-tiktok
 - TikTok 字体与文字工具：https://influencermarketinghub.com/tiktok-fonts/

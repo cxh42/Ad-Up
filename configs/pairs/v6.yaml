@@ -1,0 +1,132 @@
+# UGC 广告配对数据集 v6（2026-09-24，当前版本，开发中：生成正式数据集前还会调整）
+#
+# 一个文件管一个数据集版本的全部参数，按流程分三段：
+#   gt       GT 选取：预筛门槛、单片段模式的画幅
+#   ugc      把高质量素材做成"像真实 UGC 广告"的 GT：编排、虚拟手持相机、手机色彩、烧录文字（GT 和 LQ 都有）
+#   degrade  GT -> LQ 的退化：拍摄/ISP、剪辑导出、平台转码、二次上传
+# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director）、adup.hq.gate（gt）。
+# 每条配对的 meta.json 会记录完整参数；数据集目录下的 config.yaml 是生成时用的这份。
+# 临时改参数不用复制文件：--set degrade.platform_crf=[22,28]
+#
+# 版本历史（详细校准见 docs/ugc_degradations.md 第 6 节、docs/ugc_dataset.md 第 6 节；
+# 旧版本文件在 git 历史里：commit 4f16145 的 configs/degradation/）：
+#   v1  初版退化范围，比真实广告重
+#   v3  按 46 条 TikTok 广告校准，单一字幕样式
+#   v4  真实字幕样式、编码器混合、横竖多画幅；锐化和二次上传减弱
+#   v5  加入 UGC 化（ugc 段）；退化新增：LQ 尺寸混合、运动模糊、平台编码前预处理（下面标 [v5 新增]）
+#   v6  以 Meta 为主：画幅按 Meta 广告的分布；9:16 在 4K 素材上用能裁出的最大竖屏；竖屏版式按真实出现率（下面标 [v6]）
+
+version: v6
+
+gt:
+  # 单片段模式（make_pairs --manifest）的 GT 画幅比例；director 编排的广告在 ugc.director.aspects 里选画幅。
+  # 放不下（需要放大）的画幅不用：短边 1440 的 9:16 需要 8K 横屏或原生竖屏素材。
+  aspects: {"9:16": 0.45, "16:9": 0.35, "4:5": 0.1, "1:1": 0.1}
+  # [v6] 9:16 在 --gt-short 下裁不出来时（4K 横屏最多裁出约 1210x2150），改用素材能裁出的最大竖屏，
+  # 只要短边不低于这个值；不放大。设为 null 则竖屏只能来自 8K / 原生竖屏素材或竖屏版式
+  portrait_min_short: 1200
+  # 预筛：在 GT 分辨率下测 3 帧
+  min_detail: 12.0              # 拉普拉斯方差下限（太平、太虚的画面不要）
+  luma_range: [30, 230]         # 平均亮度范围（过暗、过曝不要）
+  max_downup_psnr: 38.0         # 有效分辨率：最清晰区域 ×2 下采样再上采样的 PSNR 上限；更高 = "假 4K"，没有真细节
+
+ugc:
+  director:
+    # [v6] 广告画幅：Meta 广告库实测 9:16 92%、4:5 5%、1:1 3%；保留少量 16:9（Feed / Audience Network 的横屏广告，
+    # 也让训练数据横竖都有）
+    aspects: {"9:16": 0.8, "4:5": 0.08, "1:1": 0.04, "16:9": 0.08}
+    # [v6] 9:16 广告用横屏素材时，按这个概率做成竖屏版式，按真实出现率而不是作为裁不出来时的替补
+    # （实测镜头占比：模糊填充 Meta 4.8%、TikTok 1.8%，分屏约 3%）
+    portrait_layout_prob: 0.08
+    portrait_layouts: {fit_blur: 0.65, split: 0.35}
+    # 镜头长度来自真实广告（data/stats/real_ads/shots.csv）；相邻镜头交替普通构图和放大
+    punch_in_prob: 0.4
+    punch_in_zoom: [1.12, 1.3]
+    jump_cut_prob: 0.7          # 跳剪：跳过一小段素材，像创作者剪掉停顿
+    jump_skip_s: [0.1, 0.8]
+    # 非跳剪处的转场类型和长度（帧）
+    transitions: {cut: 0.8, dissolve: 0.08, whip: 0.06, dip_black: 0.03, dip_white: 0.03}
+    transition_frames: {dissolve: [4, 12], whip: [4, 8], dip_black: [6, 12], dip_white: [6, 12]}
+    hook_slide_prob: 0.12       # 开场大字卡片
+    end_card_prob: 0.15         # [v6] 结尾 CTA 卡片（真实广告里纯文字卡片占画面 6.6%，开场卡片之外多是结尾的购买引导）
+    still_prob: 0.15            # 插入同主题照片（Ken Burns / 手持）
+    pip_prob: 0.05              # 画中画反应
+    screen_ad_prob: 0.05        # [v6] 竖屏广告插入 App 录屏（科技/App 类 ×4）；真实广告里录屏占画面约 3%
+    screen_pip_prob: 0.5        # 口播素材的录屏做成"录屏 + 人脸小窗"
+    other_theme_share: 0.02     # --n-ads 抽样时，非广告主题（风景、古董等）素材合计占的比例
+  camera:
+    # 虚拟手持相机。director 会按真实广告的抖动分布为每条广告改写 shake_rms，只补素材自身没有的那部分
+    shake_prob: 0.5
+    shake_rms: [0.15, 1.2]      # 画面宽度的百分比
+    walk_prob: 0.15
+    drift_prob: 0.5
+    drift_pct: [0.3, 2.0]
+    push_prob: 0.3
+    push_zoom: [1.03, 1.12]
+    base_zoom: [1.0, 1.0]
+    roll_per_pct: 0.15
+  still_camera: {shake_prob: 0.5, drift_prob: 0.8, push_prob: 0.8, push_zoom: [1.05, 1.2]}   # 照片镜头覆盖 camera 的这几项
+  look:
+    # 手机色彩：向一个真实广告镜头的色彩统计（data/stats/real_ads/ugc_look.csv）迭代匹配，m_* 是匹配时各项的上下限。
+    # 录屏和文字卡片是数字画面，不套色彩
+    look_prob: 0.9
+    m_exposure: [0.75, 1.5]
+    m_white: [0.78, 1.0]
+    m_shadow_lift: [0.0, 0.1]
+    m_saturation: [0.7, 2.0]
+    m_warmth: [-0.06, 0.1]
+    contrast: [-0.05, 0.12]
+    tint: [-0.01, 0.02]
+    # 以下只在没有真实统计表时随机抽取用
+    exposure: [1.03, 1.25]
+    shadow_lift: [0.0, 0.05]
+    highlight_rolloff: [0.5, 1.0]
+    knee: [0.6, 0.75]
+    white: [0.86, 0.98]
+    saturation: [1.1, 1.6]
+    warmth: [-0.01, 0.06]
+  text:
+    # 烧录文字（OCR 实测：约 95% 的真实广告几乎每帧都有字）
+    text_prob: 0.95
+    caption_prob: 0.85          # 滚动字幕
+    hook_prob: 0.5              # 开头标题
+    sticker_prob: 0.45          # 贴纸（价格、折扣、CTA、#ad、评分、emoji）
+    fine_print_prob: 0.2        # 小字免责声明
+
+degrade:
+  # ---- LQ 尺寸 [v5 新增]：make_pairs --scale auto 时抽 LQ 短边；真实输入是 540-720p（2K GT 时 ×2 / ×2.5 / ×2.67）
+  lq_short: {720: 0.6, 576: 0.3, 540: 0.1}
+  # ---- 1. 拍摄 / ISP（在 GT 尺寸上，每个 LQ 变体各抽一次，整段固定）
+  blur_prob: 0.2
+  blur_sigma: [0.3, 1.2]        # 虚焦；半径按 1080p 定义，随画面缩放
+  noise_prob: 0.25
+  noise_sigma: [1.0, 4.0]       # 亮度噪声，色度噪声减半
+  denoise_prob: 0.4
+  denoise_strength: [20, 50]    # 双边滤波，或只在肤色区域（美颜）
+  sharpen_prob: 0.7
+  sharpen_amount: [0.4, 1.2]    # ISP 的 unsharp mask
+  sharpen_sigma: [0.8, 2.0]
+  motion_blur_prob: 0.6         # [v5 新增] 运动模糊：沿虚拟相机每帧的速度，长度 = 速度 × 快门比例
+  shutter: [0.2, 1.0]
+  # ---- 2. 剪辑 App 导出（x264）
+  edit_prob: 0.7
+  edit_crf: [16, 22]
+  # ---- 3. 平台转码：缩到 LQ 尺寸 ->（预处理）-> 编码
+  resize_flags: [bicubic, bilinear, area, lanczos]
+  # [v5 新增] 编码前预处理：依据 ByteDance 公开的编码前自适应锐化（RPO-AdaSharp）和 KVQ 对短视频流程的描述
+  platform_pre: {none: 0.6, sharpen: 0.2, denoise: 0.2}
+  pre_sharpen: [0.3, 0.8]       # ffmpeg unsharp 强度
+  pre_denoise: [1.5, 4.0]       # ffmpeg hqdn3d 强度
+  # 编码器混合：H.264 = TikTok / Meta；VP9 / AV1 = YouTube 和 Meta 应用内 AV1；HEVC = iOS 和国内平台。
+  # 非 H.264 的 CRF 范围按 YouTube Shorts 720p 的 bpp 10-90 分位标定。VP9 / AV1 的 LQ 解码后存为无损 H.264
+  platform_codecs: {h264: 0.6, vp9: 0.15, av1: 0.15, hevc: 0.1}
+  platform_crf: [20, 27]        # H.264
+  vp9_crf: [36, 50]
+  av1_crf: [40, 55]
+  hevc_crf: [24, 32]
+  platform_maxrate_k: [1200, 1600, 2000, 3000, 4000]
+  keyint: [60, 110, 150, 250]
+  # ---- 4. 二次上传：放大 -> 任意编码器重编码 -> 缩回 LQ 尺寸
+  reupload_prob: 0.15
+  reupload_up: [1.0, 1.5, 2.0]
+  reupload_crf: [22, 28]        # H.264；其他编码器用各自的 CRF 范围

@@ -94,6 +94,20 @@ def gt_geometry(aspect, gt_short, scale):
     return int(round(lq_w * scale)) // 2 * 2, int(round(lq_h * scale)) // 2 * 2, lq_w, lq_h
 
 
+def fits(sw, sh, aspect, gt_short, scale, margin=0):
+    """Whether the GT at this aspect / short side can be cut from an sw x sh source without upscaling."""
+    gw, gh, _, _ = gt_geometry(aspect, gt_short, scale)
+    return max_crop(sw, sh, gw + margin, gh + margin)[0] >= gw + margin
+
+
+def max_gt_short(sw, sh, aspect, gt_short, scale, min_short):
+    """gt_short if the source can supply it, else the largest even short side >= min_short it can (None if none).
+    Reduced sizes keep a few pixels of margin, because make_pairs may sample the LQ size (and so the rounding) later."""
+    if fits(sw, sh, aspect, gt_short, scale):
+        return gt_short
+    return next((s for s in range(gt_short // 2 * 2 - 2, min_short - 1, -2) if fits(sw, sh, aspect, s, scale, 4)), None)
+
+
 def feasible_aspects(sources, gt_short, scale, weights):
     """Aspects whose GT can be cut from every source (sw, sh) without upscaling."""
     ok = {}

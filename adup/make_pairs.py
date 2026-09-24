@@ -42,7 +42,7 @@ from adup.config import add_config_args, load_config
 from adup.degrade.capture import apply_capture, sample_capture
 from adup.degrade.platform import edit_codec, finish_variant, pick_weighted, sample_chain
 from adup.hq.gate import crop_filter, gate_ok, gate_stats
-from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, probe, split_at
+from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, max_gt_short, probe, split_at
 from adup.ugc.look import LOOK_STATS, apply_look, match_look, real_look_targets, sample_look, tone_lut
 from adup.ugc.render import ShotRenderer
 from adup.ugc.sequence import sequence_frames, shot_ranges
@@ -53,6 +53,8 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
     rng = random.Random(seed)
     nrng = np.random.default_rng(seed)
     deg, ugc = config["degrade"], config["ugc"]
+    gt_short = seq.get("gt_short", gt_short)       # the director reduces it for 9:16 ads cut from 4K landscape clips
+    lq_short = None
     if scale == "auto":                     # real inputs are 540-720p: sample the LQ short side, scale = GT / LQ
         lq_short = int(pick_weighted(rng, {int(k): v for k, v in deg["lq_short"].items()}))
         scale = gt_short / lq_short
@@ -62,9 +64,17 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
     else:
         sizes = [probe(s["src"])[:2] for s in shots]
         aspects = feasible_aspects(sizes, gt_short, scale, config["gt"]["aspects"])
+        portrait_short = None
+        if "9:16" in config["gt"]["aspects"] and "9:16" not in aspects and config["gt"].get("portrait_min_short"):
+            fit = [max_gt_short(sw, sh, "9:16", gt_short, scale, config["gt"]["portrait_min_short"]) for sw, sh in sizes]
+            if all(fit):
+                portrait_short, aspects["9:16"] = min(fit), config["gt"]["aspects"]["9:16"]
         if not aspects:
             raise ValueError(f"no aspect ratio fits GT short side {gt_short} in sources {sizes}")
         aspect = pick_weighted(rng, aspects)
+        if aspect == "9:16" and portrait_short:
+            gt_short = portrait_short
+            scale = gt_short / lq_short if lq_short else scale
     gw, gh, lw, lh = gt_geometry(aspect, gt_short, scale)
     gates = []
     if not seq.get("pregated"):                  # clip-level gate already applied by the director otherwise
