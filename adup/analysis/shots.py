@@ -1,18 +1,23 @@
-"""Split existing videos (real ads, KwaiVIR, HQ clips) into shots, keeping the originals untouched.
+"""Detect the shots of existing videos (real ads, KwaiVIR, HQ clips), keeping the originals untouched.
 
-For each input video this writes <out>/<video_id>/shots.json and, unless --no-split, one frame-exact file per shot
-(shot_000.mp4, ...), re-encoded losslessly (x264 -qp 0) so the split adds no degradation. shots.json records where every
-shot came from and how it was cut: parent path, frame and time ranges, the detector, its parameters and its version.
+For each input video this writes <out_root>/<video_id>.json recording how it was cut: parent path, frame and time
+ranges of every shot, the detector, its parameters and its version. With --split it also writes one frame-exact file
+per shot (<out_root>/<video_id>/shot_000.mp4, ...), re-encoded losslessly (x264 -qp 0) so the split adds no degradation.
+--table aggregates every <out_root>/*.json into a shot-length table (one row per shot); the director draws its cut
+rhythm from data/stats/real_ads/shots.csv. training/dove/infer.py uses detect_cuts for shot-aware inference.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.shots.detect <out_root> <videos...> [--no-split]
+  .venv-iqa/bin/python -m adup.analysis.shots data/real_ads/tiktok_topads/<date>/shots <videos...> [--split] \
+      [--table data/stats/real_ads/shots.csv]
 """
 
 import argparse
+import glob
 import json
 import os
 import subprocess
 
+import pandas as pd
 import scenedetect
 from scenedetect import AdaptiveDetector, detect
 
@@ -59,23 +64,34 @@ def shots_record(path, cuts, n, fps, w, h):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out_root")
-    ap.add_argument("videos", nargs="+")
-    ap.add_argument("--no-split", action="store_true", help="only write shots.json")
+    ap.add_argument("videos", nargs="*")
+    ap.add_argument("--split", action="store_true", help="also write one lossless file per shot")
+    ap.add_argument("--table", help="write a shot-length CSV from every <out_root>/*.json")
     args = ap.parse_args()
+    os.makedirs(args.out_root, exist_ok=True)
     for k, path in enumerate(args.videos):
         vid = os.path.splitext(os.path.basename(path))[0]
-        out = os.path.join(args.out_root, vid)
-        if os.path.exists(os.path.join(out, "shots.json")):
+        rec_path = os.path.join(args.out_root, f"{vid}.json")
+        if os.path.exists(rec_path):
             continue
-        os.makedirs(out, exist_ok=True)
         w, h, fps, n = probe(path)
         rec = shots_record(path, detect_cuts(path), n, fps, w, h)
-        if not args.no_split:
+        if args.split:
+            out = os.path.join(args.out_root, vid)
+            os.makedirs(out, exist_ok=True)
             for s in rec["shots"]:
                 s["file"] = os.path.join(out, f"shot_{s['index']:03d}.mp4")
                 cut_range(path, s["file"], s["start_frame"], s["end_frame"])
-        json.dump(rec, open(os.path.join(out, "shots.json"), "w"), indent=1)
+        json.dump(rec, open(rec_path, "w"), indent=1)
         print(f"[{k + 1}/{len(args.videos)}] {vid}: {len(rec['shots'])} shots", flush=True)
+    if args.table:
+        rows = []
+        for f in sorted(glob.glob(os.path.join(args.out_root, "*.json"))):
+            rec = json.load(open(f))
+            rows += [{"video": os.path.splitext(os.path.basename(f))[0], "parent": rec["parent"], "frames": s["frames"],
+                      "fps": rec["fps"], "total": rec["parent_frames"]} for s in rec["shots"]]
+        pd.DataFrame(rows).to_csv(args.table, index=False)
+        print(f"{len(rows)} shots -> {args.table}")
 
 
 if __name__ == "__main__":

@@ -6,21 +6,28 @@
 整条流程：
 
 ```
-HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
-  → 预筛 adup/sources/gate.py          有效分辨率、曝光、纹理，并测素材自身运动
+HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
+  → 预筛 adup/hq/gate.py               有效分辨率、曝光、纹理，并测素材自身运动
   → 编排 adup/ugc/director.py          每条素材编成一条"广告"：镜头切分、跳剪、放大、版式、录屏、照片、开场卡片
-  → 渲染 adup/ugc/render.py            人脸感知裁剪 + 虚拟手持相机，只缩小不放大
-  → 风格 adup/ugc/look.py              按真实广告的色彩分布匹配手机观感
-  → 文字 adup/degrade/overlays.py      字幕、标题、贴纸、小字
-  → 退化 adup/degrade/pipeline.py      拍摄/ISP（含随相机速度的运动模糊）→ 剪辑导出 → 平台转码 → 二次上传
-  → 输出 整段 + 逐镜头配对，meta.json 记录每一步参数
+                                       输出 data/pairs/<数据集>/specs.jsonl
+  → 生成 adup/make_pairs.py            按 specs 逐条生成配对：
+       GT：渲染 ugc/render.py         人脸感知裁剪 + 虚拟手持相机（ugc/camera.py），只缩小不放大
+           转场 ugc/sequence.py
+           风格 ugc/look.py            按真实广告的色彩分布匹配手机观感
+           文字 ugc/text.py            字幕、标题、贴纸、小字
+       LQ：拍摄 degrade/capture.py    运动模糊（随相机速度）、虚焦、噪声、降噪/美颜、锐化
+           平台 degrade/platform.py   剪辑导出 → 缩小 + 编码前预处理 → 平台转码 → 二次上传
+  → 输出 data/pairs/<数据集>/：整段 + 逐镜头配对，meta.json 记录每一步参数
 ```
+
+所有参数在一个文件里：`configs/pairs/v5.yaml`，分 `gt`（预筛）、`ugc`（编排、相机、色彩、文字）、
+`degrade`（退化）三段。管线读取的真实广告统计在 `data/stats/`（见 `data/README.md`）。
 
 ## 1. 真实 UGC 广告调研
 
 样本：**261 条**真实广告。
-- **TikTok Top Ads**：88 条，覆盖全部 21 个行业（`data/ads/tiktok_topads/`）。
-- **Meta 广告库**：164 条，28 个主题关键词（`data/ads/meta_adlib_web/`）。
+- **TikTok Top Ads**：88 条，覆盖全部 21 个行业（`data/real_ads/tiktok_topads/`）。
+- **Meta 广告库**：164 条，28 个主题关键词（`data/real_ads/meta_adlib_web/`）。
 - 另有 KwaiVIR 真实野外视频 63 条，只用于评测。
 
 ### 1.1 内容（`adup/analysis/ugc_content.py`，CLIP 零样本，每 2 秒一帧，按广告归一化）
@@ -69,13 +76,13 @@ HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
 | UltraVideo 4K | 已下载 719 条（人物 + 产品展示），全池 8,165 条人物类 | 横屏；可做 16:9 / 4:5 / 1:1 的 2K GT，以及版式竖屏 | CC-BY + 非商业研究 | 主力 |
 | UltraVideo 8K | 已下载 228 条 | 横竖都能做，是 2K+ 竖屏的主要来源 | 同上 | 竖屏 |
 | Unsplash Lite 照片 | 24,847 张短边 ≥ 1440（竖图 10,725 张）；UGC 相关主题约 1,400 张，其中美妆产品 396 张 | 横竖都有 | **允许用于内部商用模型训练** | 照片镜头（产品图、Ken Burns），补美妆、服饰、宠物 |
-| 合成 App 界面 | 按需生成（`adup/sources/ui_screens.py`，4 倍像素 = 1440 宽，6 倍 = 2160 宽） | 竖屏 | 自有 | 录屏镜头，补科技 / App 类 |
+| 合成 App 界面 | 按需生成（`adup/hq/ui_screens.py`，4 倍像素 = 1440 宽，6 倍 = 2160 宽） | 竖屏 | 自有 | 录屏镜头，补科技 / App 类 |
 
-**预筛**（`adup/sources/gate.py`）：在 GT 尺寸下，取最清晰区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB；
-同时检查曝光和纹理。4K 素材在 2K GT 下约 60% 通过；8K 素材横屏 61%、竖屏 31% 通过。
+**预筛**（`adup/hq/gate.py`）：在 GT 尺寸下，取最清晰区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB；
+同时检查曝光和纹理。4K 素材在 2K GT 下抽样约 60% 通过（全部 719 条还没跑预筛，留给服务器）；8K 素材横屏 61%、竖屏 31% 通过。
 预筛还会测素材自身运动（`src_shake`、`src_pan`），供导演补抖动时使用。
 
-**内容覆盖**（`outputs/analysis/content_coverage.csv`）：
+**内容覆盖**（`data/stats/hq/content_coverage.csv`）：
 - 美食在 UltraVideo 里严重过剩（4K 3,670 条、8K 661 条），生成时要降采样。
 - 美妆、服饰、宠物的视频少，用照片镜头补。
 - 科技 / App 类用合成录屏补。
@@ -90,13 +97,15 @@ HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
 | 选素材 `ugc/director.py --n-ads` | 按"主题在真实广告中的占比 ÷ 素材池中该主题的数量"加权抽取，每条素材最多用 3 次 | 主题：CLIP 直接看片段中间帧（含"风景、古董、废墟"等非广告类别），文字描述只作后备 |
 | 编排 `ugc/director.py` | 按真实镜头长度切分；70% 跳剪（跳过 0.1–0.8 秒）；交替普通构图和放大 1.12–1.3 倍；12% 开场大字卡片；15% 插同主题照片；5% 画中画反应；15% 的竖屏广告插入录屏，口播素材一半做成"录屏 + 人脸小窗" | 真实节奏：每 1.5–3 秒一切 |
 | 版式 `ugc/render.py` | 模糊填充（横屏放进竖屏）、上下分屏（第二格用同源的其他镜头或同类别片段）、画中画、左右合拍、幻灯片、录屏 | 真实广告里模糊填充占 2–5%；为了多出竖屏 GT，横屏素材在想要 9:16 时有 30% 走竖屏版式 |
-| 文字 `degrade/overlays.py` | 字幕、标题、贴纸、小字；字幕避开标题所在的区域，贴纸靠四角，避开其他文字 | OCR 实测：95% 的广告全程有字 |
+| 文字 `ugc/text.py` | 字幕、标题、贴纸、小字；字幕避开标题所在的区域，贴纸靠四角，避开其他文字 | OCR 实测：95% 的广告全程有字 |
 | 转场 | 硬切 80%，叠化、甩镜、黑场、白场 | |
 
 数字画面（录屏、幻灯片）不套手机色彩，也不做拍摄阶段的退化，只经过剪辑导出和平台转码。
 
 ## 4. 退化（LQ）
 
+代码：`adup/degrade/capture.py`（拍摄 / ISP）、`adup/degrade/platform.py`（剪辑导出、平台转码、二次上传）；
+参数：`configs/pairs/v5.yaml` 的 `degrade` 段，v5 新增的三项在文件里标了 `[v5 新增]`。
 在 v4（`docs/ugc_degradations.md` 第 6 节）基础上：
 - **平台预处理**：编码前做锐化（20%）或降噪（20%），在缩到 LQ 尺寸之后执行。
 - **LQ 尺寸混合**：`--scale auto`，2K GT 的 LQ 短边按 720 / 576 / 540 = 60% / 30% / 10% 抽取，
@@ -108,10 +117,20 @@ HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
 
 ## 5. 输出
 
-每条广告一个目录：
+每个数据集一个目录 `data/pairs/<数据集>/`：`specs.jsonl`（director 的编排结果）、`config.yaml`（生成时用的参数），
+以及每条广告一个子目录：
 - `gt.mp4`、`lq_0.mp4`、`lq_1.mp4`：整段；
 - `shots/shot_XXX_{gt,lq_k}.mp4`：多镜头时的逐镜头版本，逐帧精确、无损；
 - `meta.json`：规格、画幅、GT / LQ 尺寸，每个镜头的渲染信息（裁剪、放置方式、相机参数、版式），色彩参数和目标，文字元素的位置和帧范围，每个变体的退化参数，镜头边界和来源。
+
+本机现有的配对数据（都是 v5 流程，GT 短边 1440，本机只做测试，批量在服务器上跑）：
+
+| 目录 | 内容 | 用途 |
+|---|---|---|
+| `data/pairs/ugc_v5_calib/` | 30 条广告 × 2 个 LQ，GT 横竖多画幅，LQ 短边 540–720 | 第 6 节的校准 |
+| `data/pairs/ugc_v5_preview/` | 8 条广告 × 1 个 LQ，按真实广告主题占比抽取 | 人工看效果 |
+| `data/pairs/cuttest_2k_x2/` | 4 条多镜头序列，GT 2560x1440，LQ 1280x720 | 测 DOVE 在镜头切换处的表现 |
+| `data/pairs/archive/` | 旧版本：1080p GT 的配对、v1–v4 的校准集 | 已被 v5 取代，可删除 |
 
 ## 6. 校准（2026-09-24，30 条广告 × 2 个 LQ，本机小样本）
 
@@ -140,7 +159,7 @@ HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
 - **退化本身已经对齐**：块效应、锐化光晕、有效分辨率都对上了。
 
 所以剩下的真实度差距靠按主题选素材解决：`director --n-ads` 按真实广告的主题占比抽素材，
-主题由 CLIP 直接看片段中间帧判定（`outputs/analysis/content_clips.csv`），非广告内容只占 2%。
+主题由 CLIP 直接看片段中间帧判定（`data/stats/hq/content_clips.csv`），非广告内容只占 2%。
 在已下载的 947 条素材上抽 300 条广告，主题分布为：美妆 20%、家居 16%、科技/App 14%、服饰 12%、
 美食 8%、宠物 7%，和真实广告一致。
 
@@ -153,22 +172,25 @@ HQ 素材（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
 
 ## 7. 在服务器上批量生成
 
+服务器需要本机的 `data/stats/`（约 10 MB，真实广告统计和素材主题表）和 `data/assets/`（字体、人脸模型），
+其余素材在服务器上直接下载：
+
 ```bash
 # 素材（服务器上下载，本机只做样例）
-python -m adup.sources.ultravideo 300 --per-source 4 --kind both            # 4K
-python -m adup.sources.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K
-python -m adup.sources.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
+python -m adup.hq.ultravideo 300 --per-source 4 --kind both            # 4K -> data/hq/ultravideo/4k/
+python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K -> data/hq/ultravideo/8k/
+python -m adup.hq.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
 # 预筛（2K 与 4K 各一份）
-python -m adup.sources.gate --manifest data/hq/ultravideo/manifest.csv --gt-short 1440 --out data/hq/ultravideo/gate_1440.csv
-python -m adup.sources.gate --manifest data/hq/ultravideo_8k/manifest.csv --gt-short 1440 --out data/hq/ultravideo_8k/gate_1440.csv
+python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --gt-short 1440 --out data/hq/ultravideo/4k/gate_1440.csv
+python -m adup.hq.gate --manifest data/hq/ultravideo/8k/manifest.csv --gt-short 1440 --out data/hq/ultravideo/8k/gate_1440.csv
 # 按画面给素材打主题（CLIP，每条一帧）
-python -m adup.analysis.ugc_content clips outputs/analysis/content_clips.csv data/hq/ultravideo/manifest.csv data/hq/ultravideo_8k/manifest.csv
+python -m adup.analysis.ugc_content clips data/stats/hq/content_clips.csv data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv
 # 编排（按真实广告主题占比抽素材）+ 生成
-python -m adup.ugc.director --clips data/hq/ultravideo/manifest.csv data/hq/ultravideo_8k/manifest.csv \
-    --gate data/hq/ultravideo/gate_1440.csv data/hq/ultravideo_8k/gate_1440.csv \
-    --stills outputs/analysis/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
-    --gt-short 1440 --n-ads 5000 --out data/hq/sequences/ugc_2k.jsonl
-python -m adup.degrade.pipeline --sequences data/hq/sequences/ugc_2k.jsonl --out data/pairs/ugc_2k --gt-short 1440 --scale auto --variants 2
+python -m adup.ugc.director --clips data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv \
+    --gate data/hq/ultravideo/4k/gate_1440.csv data/hq/ultravideo/8k/gate_1440.csv \
+    --stills data/stats/hq/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
+    --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
+python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --gt-short 1440 --scale auto --variants 2
 ```
 
 ## 8. 已知不足

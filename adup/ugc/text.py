@@ -1,10 +1,11 @@
 """Burn realistic on-screen text into GT frames: running captions, hook titles, stickers and fine print.
 
-Text is drawn on the GT, before any degradation, because in real ads it is burned in by the editing app or at upload
-and then goes through every later encode. Distributions follow docs/ugc_degradations.md §2 (OCR on 110 real TikTok and
-Meta ads): ~95% of ads carry text in almost every frame, OCR box height is 1.6–6.6% of the frame height, and captions
-cluster in the lower-middle of the frame. Styles are the families seen in those ads (and in CapCut / TikTok / caption
-apps): plain white sans, rounded plates, bold caps with a highlighted current word, and karaoke-style plates.
+Part of UGC-ification (config section ugc.text). Text is drawn on the GT, before any degradation, because in real ads
+it is burned in by the editing app or at upload and then goes through every later encode, so GT and LQ both carry it.
+Distributions follow docs/ugc_degradations.md §2 (OCR on 110 real TikTok and Meta ads): ~95% of ads carry text in
+almost every frame, OCR box height is 1.6–6.6% of the frame height, and captions cluster in the lower-middle of the
+frame. Styles are the families seen in those ads (and in CapCut / TikTok / caption apps): plain white sans, rounded
+plates, bold caps with a highlighted current word, and karaoke-style plates.
 
 Everything is drawn from masks and composited with straight alpha, so anti-aliased edges carry no dark fringes.
 """
@@ -17,8 +18,8 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFilter
 
-from adup.degrade import fonts
-from adup.paths import ADS
+from adup.paths import REAL_ADS
+from adup.ugc import fonts
 
 FALLBACK_COPY = [
     "I was today years old when I found this", "ok but why is nobody talking about this", "this changed my whole routine",
@@ -47,7 +48,7 @@ PLATES = [(WHITE, BLACK), (WHITE, BLACK), (WHITE, BLACK), (BLACK, WHITE), ((254,
 def ad_copy():
     """Sentences from the scraped ads' own copy (TikTok titles, Meta bodies), falling back to generic lines."""
     lines = []
-    for f in glob.glob(str(ADS / "*" / "*" / "summary.csv")):
+    for f in glob.glob(str(REAL_ADS / "*" / "*" / "summary.csv")):
         df = pd.read_csv(f)
         for col in ("ad_title", "body"):
             if col in df:
@@ -368,12 +369,3 @@ def draw_text(frame, i, items):
                 im, a = animated(img, anim, i - f0)
                 paste(frame, im, cx, cy, a)
 
-
-def burn_text(frames, fps, rng, config):
-    """Array version of plan_text + draw_text. Returns (new frames, meta)."""
-    n, H, W = frames.shape[:3]
-    items, meta = plan_text(n, fps, W, H, rng, config)
-    out = frames.copy()
-    for i in range(n):
-        draw_text(out[i], i, items)
-    return out, meta

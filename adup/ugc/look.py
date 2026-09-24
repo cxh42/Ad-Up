@@ -14,16 +14,15 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from adup.paths import ANALYSIS
+from adup.paths import LOOK_TABLE
 
 LOOK_STATS = ["saturation", "warmth", "luma_mean", "luma_p5", "luma_p95"]
 
 
 def real_look_targets():
-    path = ANALYSIS / "ugc_look.csv"
-    if not path.exists():
+    if not LOOK_TABLE.exists():
         return None
-    d = pd.read_csv(path)
+    d = pd.read_csv(LOOK_TABLE)
     d = d[d.group.isin(["tiktok", "meta"]) & (d.static_frac < 0.5)]
     return d[LOOK_STATS].dropna().to_numpy()
 

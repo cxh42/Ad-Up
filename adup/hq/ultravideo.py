@@ -7,8 +7,10 @@ Two kinds of clips: "human" (people on screen: talking head, hands with product,
 "product" (product showcase shots without the person requirement: cosmetics, textures, jewelry, electronics, ...).
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.sources.ultravideo [per_category] [--per-source N] [--res 4k|8k] [--kind human|product|both]
-Output: data/hq/ultravideo[_8k]/<category>/<clip_id>.mp4 and manifest.csv (the manifest lists the current selection). 8K is needed for 9:16 portrait GT at 2K or above (a 4K frame only gives 1215x2160).
+  .venv-iqa/bin/python -m adup.hq.ultravideo [per_category] [--per-source N] [--res 4k|8k] [--kind human|product|both]
+Output: data/hq/ultravideo/<res>/<category>/<clip_id>.mp4 and <res>/manifest.csv (the manifest lists the current
+selection); the catalogue (short.csv) and the zip index are shared in data/hq/ultravideo/. 8K is needed for 9:16
+portrait GT at 2K or above (a 4K frame only gives 1215x2160).
 """
 
 import argparse
@@ -21,7 +23,7 @@ from remotezip import RemoteZip
 from adup.paths import HQ, PROXIES, ROOT
 
 REPO = "https://huggingface.co/datasets/APRIL-AIGC/UltraVideo/resolve/main"
-OUT = str((HQ / "ultravideo").relative_to(ROOT))  # repo-relative paths in the manifest; also holds the zip index
+OUT = str((HQ / "ultravideo").relative_to(ROOT))  # repo-relative paths in the manifests; holds the catalogue + zip index
 N_ZIPS = 36
 
 PERSON = r"\b(woman|man|girl|boy|person|lady|guy|child|couple|hands?|she|he)\b"
@@ -93,7 +95,7 @@ def main():
     ap.add_argument("--res", choices=["4k", "8k"], default="4k")
     ap.add_argument("--kind", choices=["human", "product", "both"], default="human")
     args = ap.parse_args()
-    out = OUT if args.res == "4k" else f"{OUT}_8k"
+    out = f"{OUT}/{args.res}"
     os.makedirs(OUT, exist_ok=True)
     meta_path = f"{OUT}/short.csv"
     if not os.path.exists(meta_path):

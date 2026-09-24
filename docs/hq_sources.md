@@ -22,7 +22,7 @@ GT 需要满足五个条件：
   | 9:16 竖屏 2160x3840 | 不行 | 可以 |
 
   所以 **2K 以上的 9:16 竖屏 GT 只能来自 8K 素材或原生竖屏 4K 素材**。
-- **有效分辨率门槛**：在 GT 分辨率下，取最清晰的区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB（`adup/sources/gate.py`）。
+- **有效分辨率门槛**：在 GT 分辨率下，取最清晰的区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB（`adup/hq/gate.py`，门槛在 `configs/pairs/v5.yaml` 的 `gt` 段）。
   否则说明这段"4K"素材在 GT 尺寸下没有真实细节。在 2K 横屏 GT 上，UltraVideo 4K 大约 60% 能通过；
   直接当 4K GT 用时，只有约 30% 通过。
 
@@ -57,7 +57,7 @@ GT 需要满足五个条件：
 | OpenVidHD-0.4M | 43 万条 1080p | OpenVid-1M 的高清子集（DOVE 的 HQ-VSR 就来自 OpenVid） | CC-BY-4.0，但需遵守原素材许可 | 1080p 横屏裁竖屏只剩 608x1080，不够做 1080p 竖屏 GT |
 | HumanVid | 2 万条 1080p 人物视频，含竖屏 | 来自 Pexels | Pexels 条款禁止用于机器学习 | 不建议 |
 | Koala-36M / MiraData / VidGen-1M | 百万级，多数 ≤1080p | YouTube | 研究用 | 分辨率不够做 GT |
-| KwaiVIR（NTIRE 2026，已下载到 `data/public/KwaiVIR`） | 训练集：200 条合成 HQ/LQ + 48 条真实；验证 11 条；测试 20+ 条。全部 1080x1920 竖屏、30fps、180 帧（6 秒）、HEVC，HQ 码率 17–36 Mbps | 快手竖屏短视频 | Codabench 公开链接，研究用途 | **领域最接近**。但它是同尺寸修复（LQ 和 HQ 一样大），不是超分；1080p 也低于 2K，所以只做评测和领域参考，不当 GT |
+| KwaiVIR（NTIRE 2026，已下载到 `data/benchmarks/KwaiVIR`） | 训练集：200 条合成 HQ/LQ + 48 条真实；验证 11 条；测试 20+ 条。全部 1080x1920 竖屏、30fps、180 帧（6 秒）、HEVC，HQ 码率 17–36 Mbps | 快手竖屏短视频 | Codabench 公开链接，研究用途 | **领域最接近**。但它是同尺寸修复（LQ 和 HQ 一样大），不是超分；1080p 也低于 2K，所以只做评测和领域参考，不当 GT |
 | RealVSR / MVSR4x / RealMCVSR | 几百对 | 手机多摄像头同时拍摄的真实 LR-HR 配对 | 研究用 | 评测真实手机退化，数据量小 |
 | UVG / BVI-DVC / Inter4K | 几十到上千条 4K 序列 | 专业拍摄的测试序列 | 多为非商业 | 干净的 4K 评测集，不像 UGC |
 

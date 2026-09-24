@@ -8,7 +8,7 @@ Shot kinds (spec dicts from adup.ugc.director, or plain {"src", "start", "frames
             split     two clips stacked (before/after, two angles)       duet  two clips side by side
             pip       an inset clip (rounded corners, border) over a full-frame clip
   slide   a solid or gradient card with large text (hooks, CTAs)
-  screen  a phone screen recording: a tall app page (adup.sources.ui_screens) scrolled by swipes and pauses;
+  screen  a phone screen recording: a tall app page (adup.hq.ui_screens) scrolled by swipes and pauses;
           offsets are whole pixels, so frames are exact copies of the rendered UI
 Nothing is ever upscaled except the blurred background of fit_blur, which carries no detail by design.
 """
@@ -19,12 +19,12 @@ import urllib.request
 import cv2
 import numpy as np
 
-from adup.degrade.overlays import draw_block, pick_font, wrap
 from adup.media import max_crop, place_crop, probe, read_frames, stream_frames
 from adup.paths import HQ, PROXY
 from adup.ugc.camera import plan_camera, warp
+from adup.ugc.text import draw_block, pick_font, wrap
 
-STILLS = HQ / "unsplash_lite" / "images"
+STILLS = HQ / "unsplash_lite" / "images"          # Unsplash Lite photos, fetched on first use
 
 
 def even(x):

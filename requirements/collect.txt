@@ -1,15 +1,11 @@
-# Environment for ad collection: .venv (Python 3.11, since AdDownloader needs Python < 3.12)
+# Environment for ad collection and UI screenshots (adup.real_ads, adup.hq.ui_screens): .venv
 #   uv venv -p 3.11 .venv
-#   uv pip install -p .venv --no-deps addownloader==0.3.0
 #   uv pip install -p .venv -r requirements/collect.txt
-# AdDownloader is installed with --no-deps to skip its heavy NLP/torch extras; only the download path is used.
 pandas==2.0.3
 numpy==1.26.4
 requests
 selenium==4.16.0
 webdriver-manager==4.0.2
 opencv-python-headless
-rich
-inquirer3
 pillow
 openpyxl

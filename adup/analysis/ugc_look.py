@@ -24,10 +24,9 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from adup.paths import DATA
-from adup.shots.detect import detect_cuts
+from adup.analysis.shots import detect_cuts
+from adup.paths import FACE_MODEL
 
-YUNET = str(DATA / "models" / "face_detection_yunet_2023mar.onnx")
 SHORT = 720
 
 
@@ -169,7 +168,7 @@ def main():
     ap.add_argument("videos", nargs="+")
     ap.add_argument("--single-shot", action="store_true", help="videos are single shots (skip cut detection)")
     args = ap.parse_args()
-    det = cv2.FaceDetectorYN.create(YUNET, "", (320, 320), 0.7)
+    det = cv2.FaceDetectorYN.create(str(FACE_MODEL), "", (320, 320), 0.7)
     rows = []
     for k, v in enumerate(args.videos):
         try:

@@ -1,6 +1,6 @@
 """Build one contact sheet per industry (TikTok) or query (Meta): each row = one ad, 4 frames sampled across the video.
 
-Usage (from the repo root): .venv/bin/python -m adup.collect.contact_sheets data/ads/<source>/<date>
+Usage (from the repo root): .venv/bin/python -m adup.real_ads.contact_sheets data/real_ads/<source>/<date>
 """
 
 import os

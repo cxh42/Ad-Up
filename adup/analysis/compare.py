@@ -1,7 +1,8 @@
 """Compare metric distributions of a synthetic LQ group against the real LQ group (calibration report).
 
 Usage (from the repo root): .venv-iqa/bin/python -m adup.analysis.compare <real_group> <synth_group> [csv ...]
-Reads outputs/analysis/degradation.csv and outputs/analysis/quality.csv by default and prints, per metric, the real vs synthetic
+By default reads degradation.csv and quality.csv (adup.analysis.degradation_stats / quality) from data/stats/real_ads,
+data/stats/benchmarks and outputs/calibration (synthetic groups), and prints, per metric, the real vs synthetic
 quartiles and a normalized 1-D Wasserstein distance (in units of the real group's IQR; < ~0.3 is a close match).
 """
 
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import wasserstein_distance
 
-from adup.paths import ANALYSIS
+from adup.paths import BENCHMARK_STATS, CALIBRATION, REAL_STATS
 
 METRICS = ["bpp", "bitrate_kbps", "blockiness", "noise_sigma", "overshoot", "downup_x1.5", "downup_x2", "downup_x3",
            "dover", "dover_tech", "clipiqa", "musiq"]
@@ -36,4 +37,5 @@ def main(real, synth, csvs):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3:] or [str(ANALYSIS / "degradation.csv"), str(ANALYSIS / "quality.csv")])
+    tables = [d / f for d in (REAL_STATS, BENCHMARK_STATS, CALIBRATION) for f in ("degradation.csv", "quality.csv")]
+    main(sys.argv[1], sys.argv[2], sys.argv[3:] or [str(t) for t in tables if t.exists()])

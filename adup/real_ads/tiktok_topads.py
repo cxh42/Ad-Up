@@ -4,7 +4,7 @@ The list API needs a `user-sign` header that the page's JS computes; we load the
 Chrome, reuse its signed headers for direct API calls, and refresh them if the API starts refusing.
 Anonymous users only get page 1 (<= 20 ads) per query, so we widen the pool by querying several sort orders.
 
-Usage (from the repo root):  .venv/bin/python -m adup.collect.tiktok_topads [--industries a b ...] [--per-industry N]
+Usage (from the repo root):  .venv/bin/python -m adup.real_ads.tiktok_topads [--industries a b ...] [--per-industry N]
 Output: data/ads/tiktok_topads/<date>/videos/<industry>/*.mp4, summary.csv/.xlsx, raw.json
 """
 
@@ -22,7 +22,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from adup.paths import ADS, PROXIES, PROXY, ROOT
+from adup.paths import PROXIES, PROXY, REAL_ADS, ROOT
 
 # ---------------------------------------------------------------- config
 COUNTRIES = ["US", "GB"]      # first one is also used to load the page
@@ -44,7 +44,7 @@ INDUSTRIES = {                    # all 21 top-level industry ids from /top_ads/
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
 PAGE_URL = f"https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?period={PERIOD}&region={COUNTRY}"
 API = "https://ads.tiktok.com/creative_radar_api/v1/top_ads"
-OUT = str((ADS / "tiktok_topads" / f"{datetime.now():%Y%m%d}").relative_to(ROOT))  # repo-relative paths in the CSV
+OUT = str((REAL_ADS / "tiktok_topads" / f"{datetime.now():%Y%m%d}").relative_to(ROOT))  # repo-relative paths in the CSV
 
 
 def get_signed_session():

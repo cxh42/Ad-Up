@@ -1,6 +1,6 @@
 """Full-reference evaluation of restored videos against GT, per frame, split into frames near shot cuts and the rest.
 
-Pairs come from adup.degrade.pipeline (meta.json gives the shot boundaries). A model that mixes shots across a cut
+Pairs come from adup.make_pairs (meta.json gives the shot boundaries). A model that mixes shots across a cut
 shows up as a PSNR / LPIPS drop in the frames next to the cut.
 
 Usage (from the repo root):

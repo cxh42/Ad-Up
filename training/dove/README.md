@@ -19,6 +19,6 @@
   - GT 可能是 9:16、4:5 或 1:1，尺寸见 `meta.json` 的 `gt_size`、`lq_size`。
   - VP9/AV1 的 LQ 已解码存成无损 H.264（`stored_as: h264_lossless`），decord 可以直接读。
   - `meta.json` 的 `text` 里有每个文字元素的帧范围和位置，可以用来做文字区域的损失加权或单独评测。
-- **评测**：在真实广告（`data/ads/...`，无参考）和 `data/public/VideoLQ` 上评测。
+- **评测**：在真实广告（`data/real_ads/...`，无参考）、`data/benchmarks/VideoLQ` 和 `data/benchmarks/KwaiVIR` 上评测。
 
 预训练权重按上游 README 放到 `third_party/DOVE/pretrained_models/`。训练输出写到 `outputs/runs/dove/<run_name>/`。

@@ -1,4 +1,4 @@
-"""Turn HQ sources into UGC-ad edit specs (JSONL) for adup.degrade.pipeline: one ad per HQ clip, edited like a creator.
+"""Turn HQ sources into UGC-ad edit specs (JSONL) for adup.make_pairs: one ad per HQ clip, edited like a creator.
 
 For each HQ clip the director plans a short vertical (or square / landscape) ad the way UGC ads are cut:
   - target aspect: 9:16 when the source can supply it at the GT size, otherwise 9:16 through a layout (landscape clip
@@ -10,16 +10,19 @@ For each HQ clip the director plans a short vertical (or square / landscape) ad 
     part the source does not already have (gate CSV src_shake) is added by the virtual camera
   - optional extras: an opening text slide (hook), a product still of the same theme, a picture-in-picture reaction,
     phone screen recordings (app ads: ~15% of real ad frames), alone or with the creator's face in a corner
-  - transitions mostly hard cuts, with the edit transitions of adup.shots.compose
-Text overlays and the phone look are sampled by the pipeline. Only clips / stills that passed the GT gate are used.
+  - transitions mostly hard cuts, otherwise dissolve / whip / dip (rendered by adup.ugc.sequence)
+All knobs are in config section ugc.director (configs/pairs/<version>.yaml). Text overlays and the phone look are
+sampled later by adup.make_pairs. Only clips that passed the GT gate (adup.hq.gate, --gate) are used.
 
 With --n-ads, clips are drawn with probability proportional to (share of the clip's theme in real ads) / (number of
-clips of that theme), so the dataset's content follows real UGC ads (outputs/analysis/content_coverage.csv) instead of
+clips of that theme), so the dataset's content follows real UGC ads (data/stats/hq/content_coverage.csv) instead of
 the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/manifest.csv --gate data/hq/ultravideo/gate_1440.csv \
-      --stills outputs/analysis/content_unsplash.csv --gt-short 1440 --scale 2 --out data/hq/sequences/ugc_2k.jsonl
+  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/4k/manifest.csv \
+      --gate data/hq/ultravideo/4k/gate_1440.csv --stills data/stats/hq/content_unsplash.csv \
+      --screens data/hq/ui_screens/manifest.csv --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
+Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --scale auto
 """
 
 import argparse
@@ -29,42 +32,29 @@ import os
 import numpy as np
 import pandas as pd
 
-from adup.degrade.pipeline import ASPECTS, gt_geometry
-from adup.media import max_crop, probe
-from adup.paths import ANALYSIS, HQ
-from adup.shots.compose import TRANSITION_FRAMES, TRANSITIONS
+from adup.config import add_config_args, load_config
+from adup.media import gt_geometry, max_crop, probe
+from adup.paths import CLIPS_TABLE, COVERAGE_TABLE, HQ, LOOK_TABLE, POOL_TABLE, SHOTS_TABLE
 
 SEQ_FPS = 30
 HOOKS = ["wait for it", "POV: you finally found it", "3 reasons you need this", "I was today years old", "don't skip this",
          "this changed everything", "honest review", "run don't walk", "day 1 vs day 30", "the viral one", "before vs after",
          "is it worth it?", "ok but why is no one talking about this", "watch till the end", "my holy grail"]
 
-DEFAULTS = {
-    "aspects": {"9:16": 0.6, "16:9": 0.15, "4:5": 0.15, "1:1": 0.1},
-    # when 9:16 is wanted but the source is landscape and too small to crop it: use a layout this often (real ads:
-    # ~2-5% of shots are fit-blur, a few % split), otherwise fall back to an aspect the source can fill
-    "portrait_layout_prob": 0.3, "portrait_layouts": {"fit_blur": 0.65, "split": 0.35},
-    "punch_in_prob": 0.4, "punch_in_zoom": [1.12, 1.3],
-    "jump_skip_s": [0.1, 0.8], "jump_cut_prob": 0.7,
-    "hook_slide_prob": 0.12, "still_prob": 0.15, "pip_prob": 0.05, "screen_ad_prob": 0.15, "screen_pip_prob": 0.5,
-}
-
-
 SHAKE_GAIN = 1.07      # measured shake_rms per unit of planned camera shake (calibrated on a static still)
 
 
 def real_shake():
     """Measured shake of real ad shots (non-static shots of TikTok / Meta ads)."""
-    path = ANALYSIS / "ugc_look.csv"
-    if path.exists():
-        d = pd.read_csv(path)
+    if LOOK_TABLE.exists():
+        d = pd.read_csv(LOOK_TABLE)
         d = d[d.group.isin(["tiktok", "meta"]) & (d.static_frac < 0.5)]
         return d.shake_rms.dropna().to_numpy()
     return np.exp(np.random.default_rng(0).normal(np.log(0.4), 1.2, 1000))
 
 
 def shot_lengths():
-    s = pd.read_csv(ANALYSIS / "shots.csv")
+    s = pd.read_csv(SHOTS_TABLE)
     return (s.frames * SEQ_FPS / s.fps).round().astype(int).clip(lower=10).tolist()
 
 
@@ -90,13 +80,12 @@ POOL_TO_AD = {"beauty_applying": "beauty", "beauty_product": "beauty", "hair": "
               "baby_kids": "baby_kids", "fitness": "fitness_sports", "sports": "fitness_sports", "car": "car",
               "talking_head": "talking_head", "hands_product": "talking_head", "unboxing": "talking_head",
               "travel": "travel", "office_work": "education", "lifestyle_outdoor": "other", "shopping": "other"}
-OTHER_WEIGHT = 0.02          # share given to clips whose description matches no ad theme
 
 
-def theme_weights(clips):
+def theme_weights(clips, other_share):
     """Sampling weights and ad theme per clip. The theme comes from CLIP on the clip itself (content_clips.csv) when
-    available, else from the text description (content_pool.csv)."""
-    cov, pool, vis = ANALYSIS / "content_coverage.csv", ANALYSIS / "content_pool.csv", ANALYSIS / "content_clips.csv"
+    available, else from the text description (content_pool.csv). Clips of no ad theme share `other_share` in total."""
+    cov, pool, vis = COVERAGE_TABLE, POOL_TABLE, CLIPS_TABLE
     if not cov.exists():
         return np.ones(len(clips)) / len(clips), None
     share = pd.read_csv(cov).set_index("theme")["real_share_%"] / 100
@@ -111,8 +100,8 @@ def theme_weights(clips):
     s = t.map(lambda x: share.get(x, 0.0) + (share.get("other", 0) if x == "talking_head" else 0))
     w = (s / t.map(t.value_counts())).where(t != "none", 0.0)
     none = t == "none"
-    if none.any() and w.sum() > 0:                  # clips of no ad theme: OTHER_WEIGHT of the total, whatever the pool
-        w[none] = OTHER_WEIGHT / (1 - OTHER_WEIGHT) * w.sum() / none.sum()
+    if none.any() and w.sum() > 0:                  # clips of no ad theme: other_share of the total, whatever the pool
+        w[none] = other_share / (1 - other_share) * w.sum() / none.sum()
     return np.array(w / w.sum(), dtype=float), t
 
 
@@ -212,8 +201,9 @@ def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames,
             if rng.random() < cfg["jump_cut_prob"]:
                 kind, k = "cut", 0
             else:
-                kind = rng.choice(list(TRANSITIONS), p=np.array(list(TRANSITIONS.values())) / sum(TRANSITIONS.values()))
-                k = int(rng.integers(*TRANSITION_FRAMES[kind])) if kind != "cut" else 0
+                tr = cfg["transitions"]
+                kind = rng.choice(list(tr), p=np.array(list(tr.values())) / sum(tr.values()))
+                k = int(rng.integers(*cfg["transition_frames"][kind])) if kind != "cut" else 0
                 k = min(k, n - 4, shots[-1]["frames"] - 4) if k else 0
             transitions.append({"type": str(kind) if k > 0 else "cut", "frames": max(k, 0)})
             used -= transitions[-1]["frames"] if kind == "dissolve" else 0
@@ -229,22 +219,22 @@ def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clips", nargs="+", required=True, help="HQ clip manifests (adup.sources.*)")
-    ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.sources.gate); clips must pass")
-    ap.add_argument("--stills", help="stills table (outputs/analysis/content_unsplash.csv)")
-    ap.add_argument("--screens", help="UI screen manifest (adup.sources.ui_screens), for screen-recording shots")
+    ap.add_argument("--clips", nargs="+", required=True, help="HQ clip manifests (data/hq/*/manifest.csv)")
+    ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.hq.gate); clips must pass")
+    ap.add_argument("--stills", help="stills table (data/stats/hq/content_unsplash.csv)")
+    ap.add_argument("--screens", help="UI screen manifest (data/hq/ui_screens/manifest.csv), for screen-recording shots")
     ap.add_argument("--gt-short", type=int, default=1440)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--max-frames", type=int, default=150)
     ap.add_argument("--per-clip", type=int, default=1, help="ads planned per HQ clip (without --n-ads)")
     ap.add_argument("--n-ads", type=int, default=0, help="draw this many ads, clips weighted towards real ad themes")
     ap.add_argument("--max-per-clip", type=int, default=3, help="with --n-ads: at most this many ads per HQ clip")
-    ap.add_argument("--config", help="JSON overriding DEFAULTS")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", required=True, help="specs file, normally data/pairs/<dataset>/specs.jsonl")
+    add_config_args(ap)
     args = ap.parse_args()
-    cfg = {**DEFAULTS, **(json.load(open(args.config)) if args.config else {}), "_real_shake": real_shake()}
+    cfg = {**load_config(args.config, args.set)["ugc"]["director"], "_real_shake": real_shake()}
     rng = np.random.default_rng(args.seed)
 
     clips = pd.concat([pd.read_csv(m) for m in args.clips], ignore_index=True)
@@ -276,7 +266,7 @@ def main():
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     clips = clips.reset_index(drop=True)
     if args.n_ads:
-        w, themes = theme_weights(clips)
+        w, themes = theme_weights(clips, cfg["other_theme_share"])
         picks, used_n = [], np.zeros(len(clips), int)
         while len(picks) < args.n_ads and (w > 0).any():
             i = int(rng.choice(len(clips), p=w / w.sum()))
@@ -293,15 +283,13 @@ def main():
         order = [(c, k, None) for c in clips.itertuples() for k in range(args.per_clip)]
     with open(args.out, "w") as f:
         for clip, k, theme in order:
-            if True:
-                plan = plan_ad(rng, clip, clips, stills, lengths, cfg, args.gt_short, args.scale, args.max_frames, screens,
-                               theme)
-                if plan is None:
-                    continue
-                spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "fps": SEQ_FPS,
-                        "pregated": bool(args.gate), **plan}
-                f.write(json.dumps(spec) + "\n")
-                n_out += 1
+            plan = plan_ad(rng, clip, clips, stills, lengths, cfg, args.gt_short, args.scale, args.max_frames, screens, theme)
+            if plan is None:
+                continue
+            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "fps": SEQ_FPS,
+                    "pregated": bool(args.gate), **plan}
+            f.write(json.dumps(spec) + "\n")
+            n_out += 1
     print(f"{n_out} ad specs from {len(clips)} clips -> {args.out}")
 
 

@@ -1,9 +1,9 @@
 """Open-licensed (OFL / Apache) fonts for burned-in captions, grouped by the caption styles seen in real ads.
 
-The files are downloaded from github.com/google/fonts into data/fonts/ (not committed). TikTok Sans is TikTok's own
+The files are downloaded from github.com/google/fonts into data/assets/fonts/ (not committed). TikTok Sans is TikTok's own
 "Classic" text font; Montserrat / Poppins stand in for Proxima Nova and "The Bold Font" used by caption apps.
 
-Usage (from the repo root): .venv-iqa/bin/python -m adup.degrade.fonts     # download everything once
+Usage (from the repo root): .venv-iqa/bin/python -m adup.ugc.fonts     # download everything once
 """
 
 import os
@@ -12,9 +12,9 @@ from functools import lru_cache
 import requests
 from PIL import ImageFont
 
-from adup.paths import DATA, PROXIES
+from adup.paths import FONTS as FONT_DIR
+from adup.paths import PROXIES
 
-FONT_DIR = DATA / "fonts"
 GOOGLE_FONTS = "https://raw.githubusercontent.com/google/fonts/main"
 
 # (repo path, weight for variable fonts or None)

@@ -6,11 +6,16 @@
 
   clips downloaded HQ clips: CLIP on the middle frame -> ad theme (product first, then format), with extra
         "not an ad" scene prompts; more reliable than the text descriptions, used by the UGC director
+  stills Unsplash Lite photos with short side >= 1440: orientation, phone EXIF, theme from the descriptions
+  coverage  per ad theme: share in real ads (from `ads`) vs clips / stills available in the pool (from `pool`,
+        `stills`); the director samples clips by these shares
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.analysis.ugc_content ads   outputs/analysis/content_ads.csv <videos...>
-  .venv-iqa/bin/python -m adup.analysis.ugc_content pool  outputs/analysis/content_pool.csv
-  .venv-iqa/bin/python -m adup.analysis.ugc_content clips outputs/analysis/content_clips.csv <manifest.csv...>
+  .venv-iqa/bin/python -m adup.analysis.ugc_content ads      data/stats/real_ads/content_ads.csv <videos...>
+  .venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/hq/content_pool.csv
+  .venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/hq/content_clips.csv <manifest.csv...>
+  .venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/hq/content_unsplash.csv
+  .venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/hq/content_coverage.csv
 Needs ALL_PROXY unset for the first weight download (httpx rejects socks:// proxies).
 """
 
@@ -24,7 +29,8 @@ import pandas as pd
 import torch
 from PIL import Image
 
-from adup.paths import HQ
+from adup.paths import HQ, POOL_TABLE, REAL_STATS, STILLS_TABLE
+from adup.ugc.director import POOL_TO_AD
 
 FORMATS = {
     "talking_head": "a person talking to the camera in a selfie-style phone video",
@@ -214,22 +220,55 @@ def mpnet_encoder():
 
 
 @torch.no_grad()
-def tag_pool(out):
-    enc = mpnet_encoder()
-    s = pd.read_csv(HQ / "ultravideo" / "short.csv", usecols=["clip_id", "url", "frame_width", "frame_height",
-                                                             "total_frames", "fps", "Brief Description"])
-    s = s[s.frame_width >= 3800].reset_index(drop=True)
-    e = enc(s["Brief Description"].fillna("").tolist())
+def text_themes(enc, texts, min_sim):
+    """POOL_THEMES label of each description (or "other" below min_sim / closer to a distractor) and its similarity."""
+    e = enc(texts)
     names = [k for k, v in POOL_THEMES.items() for _ in v]
     theme_sim = e @ enc([x for v in POOL_THEMES.values() for x in v]).T
     best = torch.stack([theme_sim[:, [i for i, n in enumerate(names) if n == k]].max(1).values for k in POOL_THEMES], 1)
     dis = (e @ enc(DISTRACTORS).T).max(1).values
     sim, idx = best.max(1)
-    keep = (sim >= POOL_MIN_SIM) & (sim > dis)
-    s["theme"] = [list(POOL_THEMES)[i] if k else "other" for i, k in zip(idx.tolist(), keep.tolist())]
-    s["theme_sim"] = sim.cpu().numpy().round(3)
+    keep = (sim >= min_sim) & (sim > dis)
+    return [list(POOL_THEMES)[i] if k else "other" for i, k in zip(idx.tolist(), keep.tolist())], sim.cpu().numpy().round(3)
+
+
+def tag_pool(out):
+    s = pd.read_csv(HQ / "ultravideo" / "short.csv", usecols=["clip_id", "url", "frame_width", "frame_height",
+                                                             "total_frames", "fps", "Brief Description"])
+    s = s[s.frame_width >= 3800].reset_index(drop=True)
+    s["theme"], s["theme_sim"] = text_themes(mpnet_encoder(), s["Brief Description"].fillna("").tolist(), POOL_MIN_SIM)
     s["res"] = np.where(s.frame_width >= 7680, "8K", "4K")
     s.drop(columns=["Brief Description"]).to_csv(out, index=False)
+
+
+def tag_stills(out):
+    p = pd.read_csv(HQ / "unsplash_lite" / "photos.tsv000", sep="\t", low_memory=False,
+                    usecols=["photo_id", "photo_image_url", "photo_width", "photo_height", "photo_description",
+                             "ai_description", "exif_camera_make"])
+    p["orient"] = np.where(p.photo_height > p.photo_width * 1.05, "portrait",
+                           np.where(p.photo_width > p.photo_height * 1.05, "landscape", "square"))
+    p["phone"] = p.exif_camera_make.fillna("").str.lower().str.contains("apple|samsung|google|huawei|xiaomi|oneplus|oppo")
+    desc = (p.photo_description.fillna("") + ". " + p.ai_description.fillna("")).str.slice(0, 300).tolist()
+    p["theme"], p["theme_sim"] = text_themes(mpnet_encoder(), desc, POOL_MIN_SIM - 0.05)
+    ok = np.minimum(p.photo_width, p.photo_height) >= 1440
+    p[ok][["photo_id", "photo_image_url", "photo_width", "photo_height", "orient", "phone", "theme", "theme_sim"]].to_csv(
+        out, index=False)
+
+
+def coverage(out):
+    d = pd.read_csv(REAL_STATS / "content_ads.csv")
+    demo = {"hands_demo", "unboxing", "product_closeup"}          # generic ad formats: counted as "other" here
+    d["theme"] = [P2T.get(p) or (F2T.get(f) if f not in demo else None) or "other" for p, f in zip(d["product"], d["format"])]
+    per_ad = d.groupby("video").theme.value_counts(normalize=True).unstack(fill_value=0).mean().sort_values(ascending=False)
+    pool, st = pd.read_csv(POOL_TABLE), pd.read_csv(STILLS_TABLE)
+    rows = []
+    for t, share in per_ad.items():
+        themes = [k for k, v in POOL_TO_AD.items() if v == t]
+        p, s = pool[pool.theme.isin(themes)], st.theme.isin(themes)
+        rows.append({"theme": t, "real_share_%": round(100 * share, 1), "pool_4K_clips": int((p.res == "4K").sum()),
+                     "pool_8K_clips": int((p.res == "8K").sum()), "pool_sources": p.url.nunique(),
+                     "stills_2K": int(s.sum()), "stills_portrait": int((s & (st.orient == "portrait")).sum())})
+    pd.DataFrame(rows).to_csv(out, index=False)
 
 
 @torch.no_grad()
@@ -258,7 +297,7 @@ def tag_clips(manifests, out):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["ads", "pool", "clips"])
+    ap.add_argument("mode", choices=["ads", "pool", "clips", "stills", "coverage"])
     ap.add_argument("out")
     ap.add_argument("videos", nargs="*", help="ads: video files; clips: clip manifests")
     ap.add_argument("--every", type=float, default=2.0)
@@ -269,6 +308,10 @@ def main():
         tag_ads(args.videos, args.out, args.every)
     elif args.mode == "clips":
         tag_clips(args.videos, args.out)
+    elif args.mode == "stills":
+        tag_stills(args.out)
+    elif args.mode == "coverage":
+        coverage(args.out)
     else:
         tag_pool(args.out)
 

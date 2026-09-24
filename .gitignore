@@ -1,12 +1,12 @@
 # environments
-.venv/
-.venv-iqa/
+.venv*/
 __pycache__/
 *.pyc
 
 # secrets
 .env
 
-# large data and generated outputs (see README for how to rebuild)
-data/
+# large data and generated outputs (layout: data/README.md; rebuild commands: README.md)
+data/*
+!data/README.md
 outputs/

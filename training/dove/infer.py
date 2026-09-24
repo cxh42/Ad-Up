@@ -1,7 +1,7 @@
 """Shot-aware, memory-bounded DOVE inference for long ads, reusing upstream DOVE's model call unchanged.
 
 Differences from third_party/DOVE/inference_script.py, none of which change the model's computation:
-  - shots: the input is split at detected cuts (adup.shots.detect) and each shot is restored on its own, so the
+  - shots: the input is split at detected cuts (adup.analysis.shots) and each shot is restored on its own, so the
     temporal VAE / attention never mixes two shots. --no-shots processes the video as one piece, like upstream.
   - memory: frames stay uint8 on the CPU and are upsampled on the GPU chunk by chunk; output streams to ffmpeg.
     Upstream keeps the whole upsampled video as float32 on the CPU (a 100-frame 4K output needs ~30 GB of RAM).
@@ -37,7 +37,7 @@ from diffusers import CogVideoXDPMScheduler, CogVideoXPipeline      # noqa: E402
 from safetensors.torch import load_file                             # noqa: E402
 
 import inference_script as upstream                                 # noqa: E402
-from adup.shots.detect import detect_cuts                           # noqa: E402
+from adup.analysis.shots import detect_cuts                           # noqa: E402
 
 # output pixels x frames per pass on a 32 GB GPU (RTX 5090, measured end to end: 33 frames at 4K fit, 81 at 2K do not)
 PASS_BUDGET = 33 * 3840 * 2160
@@ -175,7 +175,7 @@ def main():
         writer.wait()
         info = {"input": path, "output": dst, "frames": n, "input_size": [w, h], "output_size": [W, H],
                 "upscale": args.upscale, "shot_aware": not args.no_shots, "shots": shots,
-                "cut_method": None if args.no_shots else "PySceneDetect AdaptiveDetector (adup.shots.detect)",
+                "cut_method": None if args.no_shots else "PySceneDetect AdaptiveDetector (adup.analysis.shots)",
                 "chunk_len": args.chunk_len, "tile": args.tile, "vae_tiling": not args.no_vae_tiling,
                 "seconds": round(time.time() - t, 1), "peak_gpu_gib": round(torch.cuda.max_memory_allocated() / 2**30, 2)}
         json.dump(info, open(os.path.join(args.out, f"{name}.json"), "w"), indent=1)

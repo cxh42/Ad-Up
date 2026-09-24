@@ -4,7 +4,7 @@ The first results page embeds the ads' JSON (about 30 ads per query), including 
 serves) and `publisher_platform` (Facebook / Instagram / Audience Network / Messenger / Threads). We load one page
 per keyword in headless Chrome and parse that JSON. See meta_adlib.py for the token-based API route.
 
-Usage (from the repo root):  .venv/bin/python -m adup.collect.meta_adlib_web [--queries q1 q2 ...] [--per-query N]
+Usage (from the repo root):  .venv/bin/python -m adup.real_ads.meta_adlib_web [--queries q1 q2 ...] [--per-query N]
 Output: data/ads/meta_adlib_web/<date>/videos/<query>/*.mp4, summary.csv
 """
 
@@ -23,8 +23,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from adup.collect.tiktok_topads import UA, video_info
-from adup.paths import ADS, PROXIES, PROXY, ROOT
+from adup.paths import PROXIES, PROXY, REAL_ADS, ROOT
+from adup.real_ads.tiktok_topads import UA, video_info
 
 # ---------------------------------------------------------------- config
 COUNTRY = "US"
@@ -34,7 +34,7 @@ QUERIES = ["skincare", "makeup", "supplement", "dog food", "snack", "dress", "cl
 
 PAGE_URL = ("https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country={country}"
             "&media_type=video&q={q}&search_type=keyword_unordered")
-OUT = str((ADS / "meta_adlib_web" / f"{datetime.now():%Y%m%d}").relative_to(ROOT))
+OUT = str((REAL_ADS / "meta_adlib_web" / f"{datetime.now():%Y%m%d}").relative_to(ROOT))
 
 
 JSON_STR = r'"((?:[^"\\]|\\.)*)"'   # a JSON string body, allowing escaped quotes
