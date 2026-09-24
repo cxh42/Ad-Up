@@ -8,6 +8,7 @@ Ad-Up 做的是面向 UGC 广告的真实世界视频超分：把 576p–720p �
 4. 按真实广告的退化生成 LQ。
 
 整体流程和调研结论见 `docs/ugc_dataset.md`，数据目录见 `data/README.md`。
+给导师的进展汇报（单个 HTML 文件，下载后离线打开）：`docs/progress/`。
 
 ## 目录结构
 
@@ -48,7 +49,8 @@ adup/                     代码（Python 包），在仓库根目录用 `python
   degrade/             ⑤  GT -> LQ 的退化（按真实广告校准）
     capture.py            拍摄 / ISP：运动模糊、虚焦、噪声、降噪美颜、锐化
     platform.py           剪辑导出、平台缩放 + 编码前预处理 + 转码（H.264 / VP9 / AV1 / HEVC）、二次上传
-configs/pairs/v5.yaml     当前数据集版本的全部参数，分 gt / ugc / degrade 三段；旧版本在 git 历史里
+configs/pairs/           每个数据集版本一个参数文件，分 gt / ugc / degrade 三段：v6.yaml（当前，以 Meta 为主）、
+                          v5.yaml（已生成的 ugc_v5_* 数据集用的）；更早的版本在 git 历史里
 training/dove/            DOVE：infer.py（按镜头、显存可控的推理）和微调计划
 third_party/              上游仓库，以 git submodule 引入，不做修改：DOVE（训练/推理）、DOVER（视频质量指标）；
                           权重放在各自目录内且不入库（DOVE/pretrained_models/、DOVER/pretrained_weights/DOVER.pth）
@@ -98,7 +100,7 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 .venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/hq/content_unsplash.csv
 .venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/hq/content_coverage.csv
 
-# ④⑤ 编排 + 生成配对 -> data/pairs/<数据集>/（参数：configs/pairs/v5.yaml；--scale auto 让 LQ 短边在 720/576/540 之间抽）
+# ④⑤ 编排 + 生成配对 -> data/pairs/<数据集>/（参数：configs/pairs/v6.yaml；--scale auto 让 LQ 短边在 720/576/540 之间抽）
 .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \
     --gate data/hq/ultravideo/{4k,8k}/gate_1440.csv --stills data/stats/hq/content_unsplash.csv \
     --screens data/hq/ui_screens/manifest.csv --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
