@@ -4,10 +4,11 @@ The list API needs a `user-sign` header that the page's JS computes; we load the
 Chrome, reuse its signed headers for direct API calls, and refresh them if the API starts refusing.
 Anonymous users only get page 1 (<= 20 ads) per query, so we widen the pool by querying several sort orders.
 
-Usage (from the repo root):  .venv/bin/python -m adup.collect.tiktok_topads
+Usage (from the repo root):  .venv/bin/python -m adup.collect.tiktok_topads [--industries a b ...] [--per-industry N]
 Output: data/ads/tiktok_topads/<date>/videos/<industry>/*.mp4, summary.csv/.xlsx, raw.json
 """
 
+import argparse
 import json
 import os
 import time
@@ -29,15 +30,14 @@ COUNTRY = COUNTRIES[0]
 PERIOD = 30                       # 7 / 30 / 180 days
 ADS_PER_INDUSTRY = 8              # videos downloaded per industry
 ORDER_BYS = ["for_you", "like", "impression", "ctr", "play_6s_rate"]
-INDUSTRIES = {                    # top-level industry ids from /top_ads/v2/filters
-    "beauty_personal_care": 14000000000,
-    "apparel_accessories": 22000000000,
-    "health": 29000000000,
-    "food_beverage": 27000000000,
-    "household_products": 18000000000,
-    "pets": 19000000000,
+INDUSTRIES = {                    # all 21 top-level industry ids from /top_ads/v2/filters
+    "education": 10000000000, "vehicle_transportation": 11000000000, "baby_kids_maternity": 12000000000,
+    "financial_services": 13000000000, "beauty_personal_care": 14000000000, "tech_electronics": 15000000000,
+    "appliances": 16000000000, "travel": 17000000000, "household_products": 18000000000, "pets": 19000000000,
+    "apps": 20000000000, "home_improvement": 21000000000, "apparel_accessories": 22000000000,
+    "news_entertainment": 23000000000, "business_services": 24000000000, "games": 25000000000,
+    "life_services": 26000000000, "food_beverage": 27000000000, "sports_outdoor": 28000000000, "health": 29000000000,
     "ecommerce": 30000000000,
-    "apps": 20000000000,
 }
 # ----------------------------------------------------------------
 
@@ -104,6 +104,10 @@ def video_info(path):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--industries", nargs="+", choices=list(INDUSTRIES), default=list(INDUSTRIES))
+    ap.add_argument("--per-industry", type=int, default=ADS_PER_INDUSTRY)
+    args = ap.parse_args()
     client = Client()
     filters = client.get("v2/filters", {})
     industry_names = {f"label_{i['id']}": i["value"] for i in filters["industry"]}
@@ -111,7 +115,8 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     raw, rows = {}, []
-    for label, industry_id in INDUSTRIES.items():
+    for label in args.industries:
+        industry_id = INDUSTRIES[label]
         pool = {}
         for country in COUNTRIES:
             for order_by in ORDER_BYS:
@@ -122,7 +127,7 @@ def main():
                     pool.setdefault(m["id"], m)
                 time.sleep(3)
         raw[label] = list(pool.values())
-        picked = sorted(pool.values(), key=lambda m: m.get("like", 0), reverse=True)[:ADS_PER_INDUSTRY]
+        picked = sorted(pool.values(), key=lambda m: m.get("like", 0), reverse=True)[:args.per_industry]
         print(f"[{label}] pool {len(pool)} unique ads, downloading {len(picked)}")
 
         folder = f"{OUT}/videos/{label}"

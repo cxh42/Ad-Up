@@ -1,5 +1,5 @@
 {
-  "_note": "v1 = first-guess degradation ranges, too harsh vs real TikTok ads (see docs/ugc_degradations.md section 4). The current default (v3) lives in adup/degrade/pipeline.py:DEFAULT_CONFIG.",
+  "_note": "v1 = first-guess degradation ranges, too harsh vs real TikTok ads (see docs/ugc_degradations.md section 5). The current default (v4) lives in adup/degrade/pipeline.py:DEFAULT_CONFIG.",
   "blur_prob": 0.4, "blur_sigma": [0.3, 1.5],
   "noise_prob": 0.35, "noise_sigma": [1.0, 6.0],
   "denoise_prob": 0.4, "denoise_strength": [20, 60],

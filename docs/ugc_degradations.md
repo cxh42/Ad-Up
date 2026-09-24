@@ -1,104 +1,253 @@
-# Real-world degradations in UGC ad videos
+# UGC 广告视频的真实世界退化
 
-This note maps the degradations that UGC ads pick up between the phone and the viewer to
-`adup/degrade/pipeline.py`. It is the basis for synthesizing (GT, LQ) training pairs.
+本文梳理 UGC 广告从手机拍摄到观众看到的过程中会经历哪些退化，并对应到 `adup/degrade/pipeline.py` 的实现。
+它是合成 (GT, LQ) 训练配对的依据。
 
-Evidence tags used below:
-- **measured** — measured on our 46 scraped TikTok Top Ads (`outputs/analysis/`).
-- **lit** — from the literature listed at the bottom.
-- **obs** — seen when browsing the ads by eye.
+下文使用的证据标记：
+- **实测**：在我们抓取的真实广告上测得（46 条 TikTok Top Ads + 64 条 Meta 广告库视频广告，`outputs/analysis/`）。
+- **文献**：来自文末列出的文献。
+- **观察**：人工浏览广告时看到的现象。
 
-## 1. What we measured on real TikTok ads (2026-09)
+## 1. 各平台实测对比（2026-09）
 
-| Property | Finding |
-|---|---|
-| Encoder | 23/55 carry an SEI `bvc0ot v2.2.1.3-20250220` (ByteDance BVC, which reuses the x264 SEI UUID). 2/55 carry `x264 core 148, crf=24, vbv_maxrate=4000`. 30/55 have no SEI. |
-| Bitstream | H.264 High profile, level 3.1, 4–5 reference frames, B-frames with reorder depth 2, CABAC, 8x8 transform. Limited (tv) range, BT.709. |
-| GOP | Median keyframe interval ≈ 110 frames. About 71% of frames are B-frames. |
-| Resolution / bitrate | 720x1280 or 576x1024 (one clip at 360x640). Bitrate 0.3–2.3 Mbps, median 1.3 Mbps. bpp ≈ 0.06. |
-| "1080p" versions | These are upscales. After field-of-view matching they look the same as the 720p version, MUSIQ drops from 65 to 58, and the down-up PSNR rises. |
-| Effective resolution | A 1.5x down-up round trip keeps a median 38 dB PSNR (HQ-VSR: 35.7 dB), so the real detail is about 480p inside a 720p frame. |
-| Noise | Lower than HQ-VSR (σ 0.34 vs 0.42). The footage is smoothed (denoised or beautified, then encoded), not noisy. |
-| Blocking | Slightly above HQ-VSR (1.037 vs 1.021 boundary/interior gradient ratio). Mild. |
-| Shots | Median 50 frames per shot and 8.5 shots per ad. Shots of ≥35 frames cover 91% of all frames. |
-| Content | About 70% UGC style, 100% 9:16. Burned-in captions on almost every ad. Stickers, price tags, split screens, screen recordings. |
+| 项目 | TikTok（46 条） | Meta：Facebook/Instagram（64 条） | YouTube Shorts（10 个品牌频道的 39 条 Shorts，只读格式列表，不下载视频） |
+|---|---|---|---|
+| 下载到的文件 | 720x1280 或 576x1024，H.264 High | 86% 为 720x1280，H.264 High | 144p–1080p 全套自适应码率阶梯，每档都有 H.264、VP9、AV1 三种编码 |
+| 码率 | 0.3–2.3 Mbps，中位数 1.3（bpp 0.061） | 0.75–1.95 Mbps（10–90 分位），中位数 1.35（bpp 0.058） | 720p 中位数：AV1 0.91、VP9 1.09、H.264 1.51 Mbps（bpp 0.026 / 0.038 / 0.045）；1080p：AV1 1.28、VP9 1.67、H.264 2.96 Mbps（bpp 0.018 / 0.024 / 0.044） |
+| 编码器痕迹 | 23/55 带字节 BVC 的 SEI，2/55 带 x264 SEI | 61/64 没有 SEI（已被抹掉），3/64 带 x264 SEI | 未测 |
+| GOP 中位数 | 110 帧 | 150 帧 | 未测 |
+| 画幅 | 100% 9:16 | 92% 9:16，另有 4:5（720x900）和 1:1 | 9:16 |
+| 投放位置 | TikTok | 64/64 同时投放 Facebook 和 Instagram，约一半还投 Messenger/Threads | YouTube |
 
-## 2. Degradation taxonomy by stage
+TikTok 和 Meta 的画质非常接近。用 `adup/analysis/compare.py` 比较两者分布（W/IQR，越低越接近，≥0.5 视为偏离）：
 
-### 2.1 Capture (phone camera and ISP)
-- **Sensor noise in low light.** Luma and chroma noise, which varies over time. [lit, obs]
-- **ISP denoise.** Produces waxy, over-smoothed textures. [lit, measured: low noise σ]
-- **Beauty filters.** Skin smoothing, face reshaping. [obs]
-- **ISP sharpening.** Unsharp-mask halos around edges. [lit]
-- **Blur.** Defocus from phone portrait mode, motion blur from handheld shooting and fast gestures, rolling shutter. [obs]
-- **Digital zoom.** An upscaled crop. The front camera is also often lower quality than the rear camera. [obs]
-- **Other artifacts.** Stabilization warping, auto-exposure and white-balance flicker, variable frame rate. [lit]
+| 指标 | TikTok 中位数 | Meta 中位数 | W/IQR |
+|---|---|---|---|
+| DOVER | 0.681 | 0.652 | 0.15 |
+| MUSIQ | 66.9 | 65.2 | 0.19 |
+| 有效分辨率（×1.5 下采样再上采样 PSNR） | 38.1 dB | 38.3 dB | 0.12 |
+| 噪声 σ | 0.34 | 0.28 | 0.48 |
+| 块效应 | 1.04 | 1.07 | **0.58** |
 
-### 2.2 Editing app (CapCut / InShot / in-app editor)
-- **Export encode.** One extra compression generation. [lit]
-- **Mixed sources in one timeline.** Stock clips, screen recordings, green-screen composites with keying edges, re-used downloads that are already compressed and sometimes watermarked. [obs]
-- **Overlays.** Burned-in captions, stickers, emoji, price tags, picture-in-picture. [obs, measured]
-- **Aspect-ratio fill.** Landscape clips placed into 9:16 with letterboxing or a blurred background. [obs]
-- **Speed ramps.** Frame blending, duplicated frames, or interpolated frames. [obs]
-- **Filters and LUTs.** Color grading. [obs]
+两者只在块效应上有明显差异：Meta 略重，噪声也略少，说明平滑更多。
+YouTube 在编码器上差别最大：它有真正的 1080p 档位，VP9/AV1 的伪影以涂抹、振铃和细节丢失为主，
+而不是 H.264 那种方块。Meta 也会在 App 里向部分 iPhone 和 Android 设备推 AV1 版本（见参考文献），
+但广告库里下载到的只有 H.264 文件。
 
-### 2.3 Platform ingest and transcode
-- **Downscale to the ladder.** 540, 576, or 720 short side. [measured]
-- **Low-bitrate H.264.** BVC or x264 at about 0.3–2.3 Mbps. [measured]
-- **Coding artifacts.** Deblocking smoothness, blocking in flat areas and fast motion, and banding in gradients such as skies and studio backdrops. [lit, measured]
-- **4:2:0 chroma subsampling.** Causes color bleeding on saturated text and sticker edges. [lit]
-- **"Fake HD".** The platform upscales to 1080p. [measured]
-- **Platform enhancement.** Pre-processing such as sharpening or denoising, and enhancement workflows. KVQ lists pre-processing, transcoding, and enhancement as the practical short-video workflows. [lit]
+TikTok 的其他实测结果：
+- **"1080p" 版本**：是放大出来的。对齐视场后与 720p 版本看起来一样，MUSIQ 从 65 降到 58。
+- **有效分辨率**：720p 画面里的真实细节只相当于 480p 左右。
+- **噪声**：比 HQ-VSR 更低（σ 0.34 vs 0.42）。画面是被平滑过的（降噪或美颜后再编码），不是噪声多。
+- **镜头**：每个镜头中位数 50 帧，每条广告 8.5 个镜头。≥35 帧的镜头覆盖了 91% 的帧。
+- **码流**：level 3.1，4–5 个参考帧，约 71% 的帧是 B 帧，有限色域（tv range），BT.709。
 
-### 2.4 Redistribution
-- **Re-upload generations.** Download, re-edit, re-upload, which adds another rescale and another encode. [lit, obs]
-- **Screen recordings of other apps.** Scaling, UI chrome, moiré. [obs]
+没有实测、只能参考文献的平台：
+- **抖音、快手、小红书**：官方推荐上传 1080x1920，支持 H.265，大文件或高码率会被降级压缩。
+  字节系在国内用自研的 BVC/ByteVC1 编码器。
+- **Snapchat、Pinterest**：没有公开的视频广告库，暂时拿不到样本。
 
-## 3. Coverage in `adup/degrade/pipeline.py`
+## 2. 文字叠加（字幕、标题、贴纸）
 
-| Stage | Implemented | Not yet |
+### 2.1 实测
+
+用 EasyOCR 在每条广告上按 1–2 fps 采样检测文字（`adup/analysis/text_overlay.py`）。检测结果包括产品包装上的字，
+所以数字略高于纯字幕，但从裁剪图看，绝大多数是后期加上去的文字。
+
+| 项目 | TikTok | Meta |
 |---|---|---|
-| GT | Portrait crop placed on the most detailed region. GT detail and luma gate. Burned-in captions and stickers on the GT. | IQA gating (CLIP-IQA / DOVER), motion-area crops |
-| Capture | Gaussian defocus blur. Luma and chroma noise. Bilateral or skin-masked smoothing. Unsharp-mask sharpening. | Motion blur, rolling shutter, digital-zoom upscale, exposure flicker |
-| Edit | x264 export (CRF 16–22, preset fast) | Letterbox or blurred-background fill, screen-recording look, speed-ramp frame blending, green-screen composites |
-| Platform | Random-kernel downscale to GT/scale. x264 High profile with CRF 20–28, maxrate 1.2–4 Mbps, keyint 60–250, 3 B-frames, 4 refs (v3). | Platform sharpening or denoise pre-filter. An HEVC or BVC-like encoder mix. |
-| Re-upload | 20% chance: upscale 1–2x, re-encode, downscale, re-encode | Watermarks |
+| 有文字的广告 | 96% | 95% |
+| ≥50% 的帧有文字的广告 | 85% | 87% |
+| ≥80% 的帧有文字的广告 | 74% | 76% |
+| 每条广告有文字的帧占比（中位数） | 95% | 97% |
+| 文字框高度占画面高度（10/50/90 分位） | 1.6 / 2.8 / 6.1% | 1.6 / 3.4 / 6.6% |
+| 文字中心的纵向位置（从上到下五等分） | 17/20/20/22/22%，基本均匀 | 17/12/19/41/12%，集中在 60–80% 高度 |
 
-Degradations excluded on purpose:
-- **Color and LUT changes.** The model should keep the advertiser's grade, not undo it.
-- **Beauty-filter reversal.** Whether the model should restore skin texture that was smoothed on purpose is a product decision. Smoothing is only applied to the LQ with a moderate probability.
+其他发现：
+- 有文字的帧里中位数有 2 个文字框，文字总面积占画面 3.4%（90 分位 9%）。
+- 每条广告中位数出现约 35 个不同单词，说明文字是跟着口播走的滚动字幕，不是一句静态标题。
 
-## 4. Calibration against real ads
+结论：**字幕在真实 UGC 广告里几乎是必有的，而且几乎全程在屏**，不是"一半广告有"。
 
-The synthetic LQ is compared with the 46 real TikTok ads at the same size (GT 1080x1920, scale 1.5, LQ 720x1280) on
-19 UltraVideo clips. Each cell is W/IQR: the 1-D Wasserstein distance divided by the real ads' interquartile range.
-Lower is closer; 0.5 or more counts as off. Script: `adup/analysis/compare.py`.
+### 2.2 字幕是怎么做出来的
+- **剪辑 App 的自动字幕**（CapCut 最常见）：语音识别后自动生成，套用模板。
+  常见效果包括逐词或 1–3 词弹出、当前词变色高亮（卡拉 OK）、缩放和弹跳动画。
+- **平台内置文字工具**：TikTok 自带 Classic、Typewriter、Handwriting、Neon、Serif 等字体，
+  可开"文字背景"，生成圆角色块底板（白底黑字、红底白字等）。Instagram 和 Edits 的文字工具类似。
+- **第三方字幕工具**：Captions、Submagic、VEED、Opus Clip 等。
+  最流行的是"Hormozi 风格"：Montserrat Black / The Bold Font / Anton 这类粗体、全大写、粗黑描边，
+  当前词用黄色或绿色高亮，每次出现 1–3 个词，放在画面中下部。
+- **代理公司的品牌化包装**：用 Premiere/AE 模板做标题、品牌字体、价格标签、CTA 按钮、评分徽章和片尾卡。
+- **平台播放器渲染的自动字幕**（TikTok、Instagram 的 auto captions）不是烧录在画面里的，
+  下载到的文件里没有，所以不需要合成。
 
-| Metric | v1 (first guess) | v2 | v3 (default) | clean GT, no degradation |
+### 2.3 在两个平台上观察到的样式
+按裁剪图人工归类，大致从多到少：
+1. **细体无衬线白字 + 轻阴影或细描边**：创作者自己加的口播字幕，字号偏小。
+2. **圆角色块底板**：白底黑字最常见，也有红、绿、黑底白字。有时带逐词揭示效果，未读的词为灰色。
+3. **粗体全大写 + 粗黑描边 + 关键词彩色高亮**：黄、绿、蓝，也就是 Hormozi / CapCut 模板风格；
+   有斜体压缩字体的变体。
+4. **衬线、手写、打字机字体**：美妆、奢侈品的标题和金句。
+5. **品牌元素**：logo、字间距很大的全大写品牌名、价格标签（"RETAIL: $27"）、折扣贴纸、CTA、
+   Trustpilot 评分、#ad / #XXPartner 标签、片尾卡。
+6. **界面元素**：App 录屏、聊天界面、计时器、评论回复气泡。
+7. **小字免责声明**：高度约 1–1.5%，放大时最容易糊成一片。
+8. **行内 emoji**。
+
+### 2.4 对超分的影响
+- 文字边缘最锐利、颜色最饱和，所以最容易出现 4:2:0 渗色、振铃和块效应。
+- 观众对文字清晰度最敏感。模型既要把字变清楚，又不能凭空"编"出错字。
+- 字幕是在剪辑或上传时烧录的，会经历后续所有编码环节。因此必须在 GT 上渲染，再走退化流程
+  （`pipeline.py` 就是这么做的）。
+
+## 3. 镜头与转场
+
+### 3.1 实测
+- **真实广告**（46 条 TikTok）：每 10 秒 3.5 次切换；镜头长度中位数 50 帧（10–90 分位 20–139 帧）。
+  - 25 帧窗口（DOVE 训练长度）有 27% 跨过切换，35 帧窗口有 36%。
+  - 广告时长中位数：TikTok 22 秒，Meta 35 秒。
+- **训练数据**：DOVE 的 HQ-VSR 和我们的 UltraVideo 片段几乎都是单镜头，各抽 60 条只有 1 条带切换。
+  也就是说 DOVE 没见过切换。
+- **DOVE 推理**：默认整段一次处理，不检测镜头。CogVideoX 的 VAE 在时间上把 4 帧压成 1 个潜变量，
+  切换如果落在中间，两个镜头会混在一起（推测，待实测）。
+
+### 3.2 做法
+1. **推理按镜头切开**：`training/dove/infer.py` 先检测切换，每个镜头单独超分再拼回。
+2. **训练同时用单镜头和多镜头**：`adup/shots/compose.py` 把单镜头片段按真实镜头长度拼成序列。
+   - 转场比例：硬切 80%、叠化 8%、甩镜 6%、黑场过渡 3%、白场过渡 3%。
+   - 后面的镜头优先取同一源视频的后续片段，像同一次拍摄剪出来的；不够再取同类别片段。
+   - 字幕跨镜头延续。
+3. **两个版本都保留**：多镜头序列的配对目录里，除了整段的 `gt.mp4`、`lq_k.mp4`，
+   还有 `shots/shot_i_{gt,lq_k}.mp4`（逐帧精确、无损）。`meta.json["shots"]` 记录每个镜头的：
+   - 来源片段、源视频 ID、从源片段第几帧开始；
+   - 在整段里的帧范围；
+   - 前后转场的类型和帧数。
+
+   切点来自拼接时的精确位置（`cut_method: composition`），叠化的混合帧算作下一个镜头的开头。
+4. **真实视频也切**：`adup/shots/detect.py` 对 TikTok、Meta、KwaiVIR 做镜头检测。原片不动，
+   另存 `data/shots/<set>/<id>/shot_XXX.mp4`（无损）和 `shots.json`，记录父视频、帧和时间范围、
+   检测器名称、参数和版本（`cut_method: detected`）。检测器只可靠地识别硬切，叠化和淡入淡出可能漏检。
+
+## 4. 按环节划分的退化类型
+
+### 4.1 拍摄（手机相机与 ISP）
+- **弱光传感器噪声**：随时间变化的亮度和色度噪声。[文献, 观察]
+- **ISP 降噪**：纹理变成蜡质、过度平滑。[文献, 实测：噪声 σ 低]
+- **美颜滤镜**：磨皮、脸型调整。[观察]
+- **ISP 锐化**：边缘出现 unsharp mask 光晕。[文献]
+- **模糊**：手机人像模式的虚焦、手持和快速手势造成的运动模糊、果冻效应。[观察]
+- **数码变焦**：裁剪后放大。前置摄像头通常也比后置差。[观察]
+- **其他**：防抖带来的画面扭曲、自动曝光和白平衡闪烁、可变帧率。[文献]
+
+### 4.2 剪辑 App（CapCut / InShot / 应用内编辑器）
+- **导出编码**：多一次压缩。[文献]
+- **一条时间线混用多种来源**：素材库片段、录屏、带抠像边缘的绿幕合成、重复使用的已压缩下载视频
+  （有时带水印）、AI 生成的画面。[观察]
+- **文字和贴纸**：见第 2 节。[实测, 观察]
+- **画幅填充**：横屏片段放进 9:16，加黑边或模糊背景。分屏、四宫格拼贴。[观察]
+- **变速**：帧混合、重复帧或插帧。[观察]
+- **滤镜和 LUT**：调色。[观察]
+
+### 4.3 平台接收与转码
+- **缩放到码率阶梯**：短边 540、576 或 720；YouTube 还有 1080。[实测]
+- **低码率编码**：TikTok 用 BVC 或 x264，Meta 广告库文件用 H.264，都在 1–2 Mbps。
+  YouTube 用 VP9/AV1，Meta App 内也有部分 AV1。[实测, 文献]
+- **编码伪影**：去块滤波造成的平滑、平坦区和快速运动处的块效应、渐变区的色带；
+  VP9/AV1 则以涂抹和振铃为主。[文献, 实测]
+- **4:2:0 色度下采样**：高饱和的文字和贴纸边缘出现渗色。[文献]
+- **"假高清"**：平台把视频放大到 1080p。[实测]
+- **平台增强**：锐化、降噪等预处理和增强流程。[文献]
+
+### 4.4 二次传播
+- **多代上传和跨平台搬运**：同一条素材常在 TikTok、Reels、Shorts 同时投放。
+  下载后重新上传会多一次缩放和编码，有时带其他平台的水印。[文献, 观察]
+- **录屏其他 App**：缩放、界面元素、摩尔纹。[观察]
+
+## 5. `adup/degrade/pipeline.py` 的覆盖情况
+
+| 环节 | 已实现 | 尚未实现 |
+|---|---|---|
+| GT | 短边 ≥ 1440（2K），只缩小不放大。画幅：9:16 45%、16:9 35%、4:5 10%、1:1 10%，放不下的画幅不用。在细节最丰富的区域裁剪。门槛：曝光、纹理、有效分辨率（×2 下采样再上采样 PSNR ≤ 38 dB）。多镜头序列带转场（第 3 节）。 | 按运动区域裁剪、素材自带水印的过滤 |
+| 文字（`overlays.py`） | 95% 的片段有文字。①滚动字幕（85%）：细体白字、圆角底板、粗体大写加当前词高亮、卡拉 OK 底板 4 种样式，逐词或逐短语出现，带弹出和淡入动画，12% 的字幕带 emoji。②开头标题（50%）：无衬线、粗体、衬线、手写、打字机字体，用底板、描边、阴影或发光。③贴纸（45%）：价格、折扣、CTA、#ad、评分、emoji，可旋转。④小字免责声明（20%）。字体是 30 多种 OFL 开源字体，包括 TikTok 自己的 TikTok Sans；文案来自抓到的真实广告文案。每个文字元素的位置和帧范围都写进 meta.json。 | 界面元素和录屏、分屏拼贴、画中画 |
+| 拍摄 | 高斯虚焦模糊。亮度和色度噪声。双边滤波或按肤色掩码的平滑。unsharp mask 锐化。 | 运动模糊、果冻效应、数码变焦放大、曝光闪烁 |
+| 剪辑 | x264 导出（CRF 16–22，preset fast） | 黑边或模糊背景填充、分屏拼贴、录屏质感、变速帧混合、绿幕合成 |
+| 平台 | 随机插值核缩小到 GT/scale。编码器按比例混合：H.264 占 60%（x264 High profile，模拟 TikTok/Meta），VP9 和 AV1 各占 15%（模拟 YouTube），HEVC 占 10%。VP9/AV1/HEVC 的 CRF 范围按 YouTube Shorts 720p 的 bpp 分布标定。VP9/AV1 的 LQ 解码后存为无损 H.264，因为 pip 版 OpenCV 和 decord 不能解码 AV1。 | 平台锐化或降噪预处理 |
+| 二次上传 | 按比例触发：放大 1–2 倍，用任意编码器重新编码，缩小，再编码 | 水印 |
+
+刻意不做的退化：
+- **调色和 LUT**：模型应保留广告主的调色，不应把它还原。
+- **还原美颜**：模型是否应该恢复被刻意磨掉的皮肤纹理，属于产品层面的决定。目前只以中等概率在 LQ 上施加平滑。
+
+## 6. 与真实广告的校准
+
+在 19 条 UltraVideo 片段上，把合成 LQ 与 46 条真实 TikTok 广告在相同尺寸下比较（GT 1080x1920，scale 1.5，
+LQ 720x1280）。每格数值为 W/IQR：一维 Wasserstein 距离除以真实广告该指标的四分位距。越低越接近；≥0.5 视为偏离。
+脚本：`adup/analysis/compare.py`。
+
+| 指标 | v1（初版） | v2 | v3（默认） | 干净 GT，不加退化 |
 |---|---|---|---|---|
 | DOVER | 0.32 | 0.17 | **0.15** | 0.36 |
 | DOVER technical | 0.40 | 0.21 | **0.13** | 0.26 |
-| noise σ | 0.42 | 0.36 | **0.29** | 0.31 |
-| sharpening overshoot | 0.68 | 0.46 | **0.37** | 0.51 |
-| blockiness | 0.49 | 0.53 | **0.39** | 1.72 |
-| bitrate | 0.41 | 0.48 | 0.56 | 10.65 |
-| down-up PSNR ×1.5 | 1.01 | 0.74 | 0.55 | 0.45 |
+| 噪声 σ | 0.42 | 0.36 | **0.29** | 0.31 |
+| 锐化过冲 | 0.68 | 0.46 | **0.37** | 0.51 |
+| 块效应 | 0.49 | 0.53 | **0.39** | 1.72 |
+| 码率 | 0.41 | 0.48 | 0.56 | 10.65 |
+| 下采样再上采样 PSNR ×1.5 | 1.01 | 0.74 | 0.55 | 0.45 |
 | MUSIQ | 1.51 | 1.09 | 0.82 | 0.42 |
 | CLIP-IQA | 0.96 | 0.73 | 0.57 | 0.25 |
 
-v3 matches the degradation-sensitive metrics. The residual gap in MUSIQ, CLIP-IQA and effective resolution is about
-the same as the gap of the undegraded GT itself (median MUSIQ: clean GT 62.2, v3 61.4, real ads 66.9). The cause is
-the source domain: cinematic, shallow depth-of-field YouTube 4K footage is softer than ISP-sharpened phone footage.
-Closing that gap needs phone-shot HQ sources, not stronger degradation.
+v3 在对退化敏感的指标上已经和真实广告吻合。MUSIQ、CLIP-IQA 和有效分辨率上剩下的差距，与未加退化的 GT 本身的差距
+大致相同（MUSIQ 中位数：干净 GT 62.2，v3 61.4，真实广告 66.9）。原因在素材本身：电影感、浅景深的 YouTube 4K
+素材比经过 ISP 锐化的手机素材更软。要缩小这部分差距，需要手机拍摄的 HQ 素材，而不是更强的退化。
 
-## 5. References
+### v4（当前默认，2026-09-24）
 
-The TikTok measurements come from the scripts in `adup/analysis/`.
+v4 的改动：
+- 新的文字叠加（第 2 节）；
+- 编码器混合：H.264 60%、VP9 15%、AV1 15%、HEVC 10%；
+- 画幅混合；
+- 锐化和二次上传稍微减弱（锐化概率 0.8→0.7、强度 0.5–1.5→0.4–1.2，H.264 CRF 上限 28→27，二次上传 0.2→0.15）。
 
-- Real-ESRGAN, high-order degradation model: https://arxiv.org/abs/2107.10833
-- RealBasicVSR / VideoLQ, video degradations with codecs; DOVE uses this pipeline: https://arxiv.org/abs/2111.12704
-- VCISR, synthetic data built with real video codecs: https://arxiv.org/abs/2311.00996
-- KVQ, Kwai short-form video quality with pre-processing, transcoding, and enhancement workflows (CVPR 2024): https://openaccess.thecvf.com/content/CVPR2024/html/Lu_KVQ_Kwai_Video_Quality_Assessment_for_Short-form_Videos_CVPR_2024_paper.html
-- KwaiSR, short-form UGC super-resolution with synthetic and wild data (NTIRE 2025): https://arxiv.org/abs/2504.15003
-- KwaiVIR, short-form UGC video restoration (NTIRE 2026): https://arxiv.org/abs/2604.10551
-- YouTube UGC dataset for compression research: https://arxiv.org/abs/1904.06457
+VP9/AV1/HEVC 的 CRF 范围（36–50 / 40–55 / 24–32）是在 GT 上扫 CRF，按 YouTube Shorts 720p 的 bpp 分布（10–90 分位）选出来的。
+
+校准用同样的 19 条片段，每条 3 个 LQ 版本，同时对比 TikTok 和 Meta。
+- **原生存储组**：H.264/HEVC 按原样存储，码率可以直接比。
+- **解码存储组**：VP9/AV1 解码后存为无损 H.264，码率没有意义，所以单独统计。
+
+| 指标 | v3 vs TikTok | v4 原生 vs TikTok | v4 原生 vs Meta | v4 解码 vs TikTok | v4 解码 vs Meta |
+|---|---|---|---|---|---|
+| DOVER | 0.15 | 0.14 | 0.20 | 0.21 | 0.18 |
+| DOVER technical | 0.13 | 0.20 | 0.25 | 0.13 | 0.13 |
+| 噪声 σ | 0.29 | 0.16 | 0.44 | 0.22 | 0.51 |
+| 锐化过冲 | 0.37 | 0.28 | 0.47 | 0.37 | 0.62 |
+| 块效应 | 0.39 | 0.98 | 0.42 | 0.61 | 0.50 |
+| 码率 | 0.56 | 0.48 | 0.36 | — | — |
+| 有效分辨率 ×1.5 | 0.55 | **0.19** | 0.32 | 0.28 | 0.35 |
+| MUSIQ | 0.82 | **0.56** | **0.35** | 0.58 | 0.39 |
+| CLIP-IQA | 0.57 | **0.39** | 0.42 | 0.53 | 0.53 |
+
+几点发现：
+- **文字缩小了"素材差距"**：更真实的文字让 MUSIQ、CLIP-IQA 和有效分辨率明显接近真实广告。
+  v3 时认为这部分差距全部来自素材太软，实际上有一部分是因为 GT 里缺少真实广告那样满屏的文字。
+- **块效应对 TikTok 偏高（0.98），对 Meta 正常（0.42）**：原因不在编码强度。
+  没有退化的 GT 本身，块效应中位数就从 v3 的 1.07 升到 v4 的 1.10，说明是合成文字的锐利边缘影响了这个指标。
+  另外 TikTok 的块效应分布很窄（IQR 只有 0.05），W/IQR 被放大了。暂时接受这个偏差。
+- **文字统计与真实广告一致**：在 v4 GT 上做同样的 OCR。
+  - 文字框高度中位数 3.3%（TikTok 2.8%，Meta 3.4%）。
+  - ≥80% 的帧有文字的片段占 86%（真实广告 74–76%），略多。
+  - 底部 1/5 的文字略多。
+
+## 7. 参考文献
+
+实测数据来自 `adup/analysis/` 下的脚本。
+
+- Real-ESRGAN，高阶退化模型：https://arxiv.org/abs/2107.10833
+- RealBasicVSR / VideoLQ，含编解码的视频退化；DOVE 使用的就是这套流程：https://arxiv.org/abs/2111.12704
+- VCISR，用真实视频编解码器构建合成数据：https://arxiv.org/abs/2311.00996
+- KVQ，快手短视频质量评价，含预处理、转码和增强流程（CVPR 2024）：https://openaccess.thecvf.com/content/CVPR2024/html/Lu_KVQ_Kwai_Video_Quality_Assessment_for_Short-form_Videos_CVPR_2024_paper.html
+- KwaiSR，短视频 UGC 超分，含合成与真实数据（NTIRE 2025）：https://arxiv.org/abs/2504.15003
+- KwaiVIR，短视频 UGC 视频修复（NTIRE 2026）：https://arxiv.org/abs/2604.10551
+- YouTube UGC 数据集，用于压缩研究：https://arxiv.org/abs/1904.06457
+- Meta 在 Reels 上使用 AV1：https://engineering.fb.com/2023/02/21/video-engineering/av1-codec-facebook-instagram-reels/
+- Hormozi 风格字幕的字体与配色：https://www.submagic.co/blog/how-to-make-alex-hormozi-captions
+- TikTok 字幕样式汇总：https://blitzcutai.com/blog/best-caption-style-tiktok
+- TikTok 字体与文字工具：https://influencermarketinghub.com/tiktok-fonts/

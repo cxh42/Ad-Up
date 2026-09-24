@@ -1,0 +1,19 @@
+# .venv-dove: DOVE inference / training (kept apart from .venv-iqa, which has transformers 5)
+#   uv venv --python 3.11 .venv-dove
+#   uv pip install --python .venv-dove/bin/python torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+#   uv pip install --python .venv-dove/bin/python -r requirements/dove.txt
+diffusers==0.33.1
+transformers==4.51.3
+accelerate>=1.1.1
+numpy==1.26.4
+sentencepiece
+imageio
+imageio-ffmpeg
+decord
+av
+peft
+opencv-python-headless
+scikit-video
+safetensors
+pandas
+scenedetect

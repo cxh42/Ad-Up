@@ -21,3 +21,7 @@ THIRD_PARTY = ROOT / "third_party"
 # All outbound traffic goes through the local proxy; override with ADUP_PROXY="" to disable.
 PROXY = os.environ.get("ADUP_PROXY", "http://127.0.0.1:7897")
 PROXIES = {"http": PROXY, "https": PROXY} if PROXY else None
+# The shell may export ALL_PROXY=socks://...; httpx (huggingface_hub, open_clip) rejects that scheme. Use the HTTP proxy.
+for _k in ("ALL_PROXY", "all_proxy"):
+    if os.environ.get(_k, "").startswith("socks") and PROXY:
+        os.environ[_k] = PROXY

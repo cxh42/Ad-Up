@@ -1,6 +1,6 @@
-"""Build one contact sheet per industry: each row = one ad, 4 frames sampled across the video.
+"""Build one contact sheet per industry (TikTok) or query (Meta): each row = one ad, 4 frames sampled across the video.
 
-Usage (from the repo root): .venv/bin/python -m adup.collect.contact_sheets data/ads/tiktok_topads/<date>
+Usage (from the repo root): .venv/bin/python -m adup.collect.contact_sheets data/ads/<source>/<date>
 """
 
 import os
@@ -30,7 +30,8 @@ def frames(path):
 def main(root):
     summary = pd.read_csv(f"{root}/summary.csv", dtype={"ad_id": str})
     os.makedirs(f"{root}/sheets", exist_ok=True)
-    for industry, group in summary.groupby("industry", sort=False):
+    key = "industry" if "industry" in summary else "query"
+    for industry, group in summary.groupby(key, sort=False):
         rows = []
         for _, ad in group.iterrows():
             if not isinstance(ad["video_file"], str):
@@ -40,7 +41,8 @@ def main(root):
                 continue
             strip = np.hstack(fs)
             label = np.full((40, strip.shape[1], 3), 255, np.uint8)
-            cv2.putText(label, f"{ad['ad_id']}  {ad['duration_s']}s  like={ad['like']}", (8, 28),
+            info = f"{ad['duration_s']}s  like={ad['like']}" if "like" in ad else str(ad.get("page_name", ""))
+            cv2.putText(label, f"{ad['ad_id']}  {info}", (8, 28),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
             rows.append(np.vstack([label, strip]))
         if not rows:
