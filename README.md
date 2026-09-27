@@ -34,9 +34,11 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     quality.py            DOVER / CLIP-IQA / MUSIQ / 码率 / 有效分辨率
     compare.py            真实与合成的分布距离（校准报告）
     eval_pairs.py         复原结果对 GT 的 PSNR / LPIPS，区分切换附近和其他帧
-  hq/                  ③  高质量素材（≥2K）                                     -> data/hq/
+    calib_final.py        用 Meta 同一条广告的 720p / 360p 校准退化的最后一步（缩小 + 编码）
+  hq/                  ③  高质量素材（≥1080p 且真实清晰）                        -> data/hq/
     ultravideo.py         UltraVideo 4K/8K 片段，从远程 zip 中逐条取出
     ui_screens.py         合成手机 App 界面长截图（无头 Chrome，4 倍 / 6 倍像素），做录屏镜头的 GT
+    kwaivir.py            KwaiVIR 训练集的 200 条高质量竖屏短视频（原生 1080×1920）做成素材清单
     gate.py               GT 预筛：曝光、纹理、在 GT 分辨率下的有效分辨率，并测素材自身运动
   ugc/                 ④  把高质量素材做成"像真实 UGC 广告"的 GT
     director.py           编排：每条素材编成一条广告（镜头切分、跳剪、放大、版式、照片、录屏、开场卡片）
@@ -50,14 +52,16 @@ adup/                     代码（Python 包），在仓库根目录用 `python
                           参数分 core（日常，待校准）和 tail（RealBasicVSR 原版，重退化）
     kernels.py            模糊核（来自 BasicSR / mmagic，Apache-2.0）
 configs/pairs/v7.yaml     当前数据集版本的全部参数，分 gt / ugc / degrade 三段；旧版本在 git 历史里
-training/dove/            DOVE：infer.py（按镜头、显存可控的推理）和微调计划
+  bench/               ⑥  基准测试：run.py 按统一规则跑各方法（输出 1080p，记录耗时和显存），evaluate.py 在合成集上打分
+                          （画质、文字保真、时间稳定、切换处），evaluate_real.py 在真实广告上打分（无参考 + Meta 360p→720p 半配对）
+training/dove/            DOVE：infer.py（按镜头、任意输出尺寸 --out-short 1080）和微调计划
 third_party/              上游仓库，以 git submodule 引入，不做修改：DOVE（训练/推理）、DOVER（视频质量指标）；
                           权重放在各自目录内且不入库（DOVE/pretrained_models/、DOVER/pretrained_weights/DOVER.pth）
-docs/                     ugc_dataset.md（数据集流程与调研，先读这个）、ugc_degradations.md（真实退化与校准）、
+docs/                     ugc_dataset.md（数据集流程与调研，先读这个）、benchmark.md（基准设计与运行）、ugc_degradations.md（真实退化与校准）、
                           hq_sources.md（高质量素材来源）
 requirements/             collect.txt（.venv）、ml.txt（.venv-iqa）、dove.txt（.venv-dove）
 data/        （不入库）   real_ads/  hq/  stats/  pairs/  benchmarks/  assets/，详见 data/README.md
-outputs/     （不入库）   calibration/（合成数据的指标、校准分组）  runs/（模型输出）  figures/  logs/
+outputs/     （不入库）   calibration/（合成数据的指标、校准分组）  bench/（基准输出和打分）  runs/（模型输出）  figures/  logs/
 ```
 
 ## 初始化
@@ -106,6 +110,12 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
 # 不经编排、每条素材直接做一个单镜头配对（对照用）
 .venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 --scale auto
+
+# 基准测试（详见 docs/benchmark.md）：dev / test 用 --grid 生成（尺寸 270/360/540/720 × 编码 H.264/VP9）
+.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7_dev/specs.jsonl --grid
+.venv-iqa/bin/python -m adup.bench.run --method dove --pairs data/pairs/ugc_v7_dev --out outputs/bench/ugc_v7_dev
+.venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/ugc_v7_dev --runs outputs/bench/ugc_v7_dev --methods bicubic dove \
+    --csv outputs/bench/ugc_v7_dev/results.csv
 
 # 校准：给合成集打分（写到 outputs/calibration/），再和真实广告比较分布
 .venv-iqa/bin/python -m adup.analysis.degradation_stats <group> outputs/calibration/degradation.csv <videos...>

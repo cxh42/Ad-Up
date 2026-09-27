@@ -204,7 +204,7 @@ def caption_track(rng, n, fps, W, H, y=None):
     start = int(rng.uniform(0, 0.6) * fps)
     end = n if rng.random() < 0.8 else int(n * rng.uniform(0.4, 1.0))
     words = word_stream(rng, int((end - start) / fps * rate) + 10)
-    segs, f, wi = [], start, 0
+    segs, texts, f, wi = [], [], start, 0
     while f < end and wi < len(words):
         k = rng.randint(*per_chunk)
         chunk = [w.upper() if upper else w for w in words[wi:wi + k]]
@@ -229,10 +229,11 @@ def caption_track(rng, n, fps, W, H, y=None):
             f1 = min(f + (si + 1) * sub if si < len(states) - 1 else f + dur, end)
             if f0 < f1:
                 segs.append((f0, f1, img, W / 2, y, anim if si == 0 else None))
+                texts.append(" ".join(chunk))
         f += dur
         if rng.random() < 0.15:
             f += int(rng.uniform(0.1, 0.6) * fps)
-    return {"type": "caption", "style": style, "font": font_name, "size_px": size, "segments": segs}
+    return {"type": "caption", "style": style, "font": font_name, "size_px": size, "segments": segs, "texts": texts}
 
 
 def hook_title(rng, n, fps, W, H):
@@ -251,7 +252,8 @@ def hook_title(rng, n, fps, W, H):
                      plate=(bg, 255) if style == "plate" else None, glow=rng.choice(HIGHLIGHTS) if style == "glow" else None)
     f1 = n if rng.random() < 0.5 else min(int(rng.uniform(2, 4) * fps), n)
     return {"type": "hook", "style": style, "font": font_name, "size_px": size,
-            "segments": [(0, f1, img, W / 2, rng.uniform(0.1, 0.3) * H, "pop" if rng.random() < 0.3 else None)]}
+            "segments": [(0, f1, img, W / 2, rng.uniform(0.1, 0.3) * H, "pop" if rng.random() < 0.3 else None)],
+            "texts": [" ".join(words)]}
 
 
 def band(item, H):
@@ -264,7 +266,7 @@ def sticker(rng, n, fps, W, H, avoid=()):
     if rng.random() < 0.25:
         size = int(loguniform(rng, 0.045, 0.09) * H)
         img = emoji_image(rng.choice(EMOJIS), size)
-        kind, font_name = "emoji", "NotoColorEmoji"
+        kind, font_name, text = "emoji", "NotoColorEmoji", ""
     else:
         size = max(int(loguniform(rng, 0.022, 0.045) * H), 12)
         font, font_name = pick_font(rng, rng.choice(["sans_bold", "heavy"]), size)
@@ -289,16 +291,17 @@ def sticker(rng, n, fps, W, H, avoid=()):
             break
     cy *= H
     return {"type": "sticker", "style": kind, "font": font_name, "size_px": size,
-            "segments": [(f0, f1, img, cx, cy, "pop" if rng.random() < 0.5 else None)]}
+            "segments": [(f0, f1, img, cx, cy, "pop" if rng.random() < 0.5 else None)], "texts": [text]}
 
 
 def fine_print(rng, n, fps, W, H):
     size = max(int(loguniform(rng, 0.011, 0.016) * H), 10)
     font, font_name = pick_font(rng, "sans", size)
-    toks = [(w, (235, 235, 235)) for w in rng.choice(FINE_PRINT).split()]
+    line = rng.choice(FINE_PRINT)
+    toks = [(w, (235, 235, 235)) for w in line.split()]
     img = draw_block(wrap(toks, font, size, W * 0.85), font, size, shadow=0.7)
     return {"type": "fine_print", "style": "plain", "font": font_name, "size_px": size,
-            "segments": [(0, n, img, W / 2, rng.uniform(0.9, 0.95) * H, None)]}
+            "segments": [(0, n, img, W / 2, rng.uniform(0.9, 0.95) * H, None)], "texts": [line]}
 
 
 # ---------------------------------------------------------------- compositing
@@ -332,7 +335,9 @@ def animated(img, anim, k):
 
 
 def plan_text(n, fps, W, H, rng, config):
-    """Decide and pre-render every text item for an n-frame W x H clip. Returns (items, meta for meta.json)."""
+    """Decide and pre-render every text item for an n-frame W x H clip. Returns (items, meta for meta.json).
+    In the meta, each item's "boxes" ([f0, f1, x0, y0, x1, y1] per segment) line up with its "texts" (the words shown in
+    that segment; "" for emoji stickers), the ground truth for OCR-based text-fidelity metrics."""
     items = []
     if rng.random() < config["text_prob"]:
         cap = rng.random() < config["caption_prob"]

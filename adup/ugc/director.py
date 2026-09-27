@@ -254,6 +254,7 @@ def main():
     ap.add_argument("--per-clip", type=int, default=1, help="ads planned per HQ clip (without --n-ads)")
     ap.add_argument("--n-ads", type=int, default=0, help="draw this many ads, clips weighted towards real ad themes")
     ap.add_argument("--max-per-clip", type=int, default=3, help="with --n-ads: at most this many ads per HQ clip")
+    ap.add_argument("--only-split", choices=["train", "dev", "test"], help="plan ads only from sources of this split")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True, help="specs file, normally data/pairs/<dataset>/specs.jsonl")
@@ -284,6 +285,8 @@ def main():
     clips["split"] = clips.youtube_id.map(lambda k: split_of(k, ratios))
     if stills is not None:
         stills["split"] = stills.photo_id.map(lambda k: split_of(k, ratios))
+    if args.only_split:
+        clips = clips[clips.split == args.only_split]
     if args.limit:
         clips = clips.sample(min(args.limit, len(clips)), random_state=args.seed)
     lengths = shot_lengths()

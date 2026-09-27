@@ -74,6 +74,12 @@ degrade:
   lq_short: {360: 0.34, 540: 0.33, 720: 0.33}
   # 每个 LQ 版本以 tail_prob 的概率用 RealBasicVSR 原版参数（tail，重退化），否则用 core（向真实广告校准）
   tail_prob: 0.2
+  # dev / test 用的网格（make_pairs --grid）：每条 GT 生成 尺寸 × 编码 的全部组合，只用 core；
+  # 270 是 ×4 兼容子集。重退化子集另跑一次：--grid --set degrade.grid.tail_prob=1.0
+  grid:
+    lq_short: [270, 360, 540, 720]
+    codec: [h264, vp9]
+    tail_prob: 0.0
 
   # ---------------------------------------------------------------- core：日常退化，初值，待用真实 360p/720p 校准
   core:
@@ -129,14 +135,16 @@ degrade:
         gray_prob: 0.4
       jpeg: {prob: 0.05, quality: [60, 95]}
     final:                      # 平台转码：多数先缩到 LQ 尺寸再编码
+      # 以下按 Meta 同一条广告的 720p / 360p 半配对校准（adup/analysis/calib_final.py，18 条，2026-09-28）：
+      # 最像 Meta 的是 area / bilinear 缩小、不加 sinc；Meta 360p 是 H.264 Main，0.052 bpp（四分位 0.043–0.062），GOP 约 144
       compress_first_prob: 0.2
-      interp: {bilinear: 0.25, bicubic: 0.25, area: 0.25, lanczos: 0.25}
-      sinc: {prob: 0.3, kernels: {sinc: 1.0}, kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]}
+      interp: {area: 0.4, bilinear: 0.4, bicubic: 0.15, lanczos: 0.05}
+      sinc: {prob: 0.1, kernels: {sinc: 1.0}, kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]}
       compress:
         prob: 1.0
         codec: {h264: 0.6, vp9: 0.4}
-        bpp: [0.03, 0.15]       # 真实广告 720p H.264 中位数约 0.06
-        keyint: [60, 110, 150, 250]
+        bpp: [0.035, 0.09]      # 真实：Meta 360p 0.052、720p 0.058、TikTok 720p 约 0.06（中位数）
+        keyint: [60, 110, 144, 250]
 
   # ---------------------------------------------------------------- tail：RealBasicVSR 原版参数（重退化、看不清的样本）
   # 与 realbasicvsr_wogan_c64b20_2x30x8_lr1e-4_300k_reds.py 相同，除了：编码器 libx264/h264/mpeg4 -> H.264/VP9，

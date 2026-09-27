@@ -9,11 +9,14 @@ Differences from third_party/DOVE/inference_script.py, none of which change the 
   - the transformer's feed-forward runs over tokens in chunks (per-token op, bit-identical output) to cut peak memory.
   - long shots: one pass holds ~33 frames at 4K / ~73 at 2K on a 32 GB GPU (bf16, no offload); longer shots
     are split into overlapping temporal chunks (upstream's scheme), still longer than DOVE's 25-frame training clips.
-  - padding is removed as pad * upscale (upstream hard-codes pad * 4, which is wrong for --upscale != 4).
+  - any output size: --out-short 1080 upsamples every input (360 / 540 / 720p, or 270p for x4) to a 1080 short side,
+    including non-integer factors; the upsampled frames are padded to multiples of 16 and cropped back afterwards.
+    --upscale N keeps upstream's integer factor. (DOVE always restores at the output size: the LQ is bilinearly
+    upsampled first, so the factor only changes how much detail the input lacks.)
 Spatial tiling (--tile) follows upstream's valid-region scheme and is off by default.
 
 Usage (from the repo root, DOVE venv):
-  .venv-dove/bin/python training/dove/infer.py --out outputs/runs/dove/test --upscale 4 <videos...>
+  .venv-dove/bin/python training/dove/infer.py --out outputs/runs/dove/test --out-short 1080 <videos...>
 """
 
 import argparse
@@ -88,16 +91,15 @@ def load_pipe(model_path, vae_tiling):
     return pipe
 
 
-def restore(pipe, prompt_emb, frames, upscale, chunk_len, overlap_t, tile_hw, overlap_hw):
-    """frames: uint8 [F, H, W, 3] of one shot -> uint8 [F, H*upscale, W*upscale, 3]."""
-    F, H, W, _ = frames.shape
+def restore(pipe, prompt_emb, frames, out_hw, chunk_len, overlap_t, tile_hw, overlap_hw):
+    """frames: uint8 [F, H, W, 3] of one shot -> uint8 [F, Ho, Wo, 3] with (Ho, Wo) = out_hw."""
+    F = frames.shape[0]
+    Ho, Wo = out_hw
     pad_f = (8 - (F - 1) % 8) % 8                                   # DOVE needs 8N+1 frames and H, W % 16 == 0
-    pad_h, pad_w = (16 - H % 16) % 16, (16 - W % 16) % 16
     x = torch.from_numpy(frames).permute(0, 3, 1, 2)                # [F, C, H, W] uint8
     if pad_f:
         x = torch.cat([x, x[-1:].repeat(pad_f, 1, 1, 1)])
-    x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))
-    Fp, Hp, Wp = x.shape[0], (H + pad_h) * upscale, (W + pad_w) * upscale
+    Fp, Hp, Wp = x.shape[0], -(-Ho // 16) * 16, -(-Wo // 16) * 16
     if not chunk_len and Fp > pass_frames(Hp, Wp):
         chunk_len = pass_frames(Hp, Wp)
     t_chunks = upstream.make_temporal_chunks(Fp, chunk_len, overlap_t if chunk_len else 0)
@@ -105,7 +107,8 @@ def restore(pipe, prompt_emb, frames, upscale, chunk_len, overlap_t, tile_hw, ov
     out = torch.empty((Fp, 3, Hp, Wp), dtype=torch.uint8)
     for t0, t1 in t_chunks:
         lq = x[t0:t1].to("cuda", torch.float32)
-        up = torch.nn.functional.interpolate(lq, size=(Hp, Wp), mode="bilinear", align_corners=False)
+        up = torch.nn.functional.interpolate(lq, size=(Ho, Wo), mode="bilinear", align_corners=False)
+        up = torch.nn.functional.pad(up, (0, Wp - Wo, 0, Hp - Ho), mode="replicate")
         up = (up / 255.0 * 2.0 - 1.0).to(torch.bfloat16).permute(1, 0, 2, 3).unsqueeze(0)   # [1, C, F, H, W]
         for h0, h1, w0, w1 in tiles:
             y = upstream.process_video(pipe=pipe, video=up[:, :, :, h0:h1, w0:w1], prompt="",
@@ -118,7 +121,7 @@ def restore(pipe, prompt_emb, frames, upscale, chunk_len, overlap_t, tile_hw, ov
             out[r["out_t_start"]:r["out_t_end"], :, r["out_h_start"]:r["out_h_end"], r["out_w_start"]:r["out_w_end"]] = \
                 (y.float().clamp(0, 1) * 255 + 0.5).to(torch.uint8).permute(1, 0, 2, 3).cpu()
         del lq, up
-    return out[:F, :, :H * upscale, :W * upscale].permute(0, 2, 3, 1).numpy()
+    return out[:F, :, :Ho, :Wo].permute(0, 2, 3, 1).numpy()
 
 
 def main():
@@ -126,7 +129,9 @@ def main():
     ap.add_argument("videos", nargs="+")
     ap.add_argument("--out", required=True)
     ap.add_argument("--model-path", default=str(DOVE / "pretrained_models" / "DOVE"))
-    ap.add_argument("--upscale", type=int, default=4)
+    size = ap.add_mutually_exclusive_group()
+    size.add_argument("--upscale", type=int, default=4, help="integer factor (upstream behaviour)")
+    size.add_argument("--out-short", type=int, help="output short side, e.g. 1080; any input size / factor")
     ap.add_argument("--no-shots", action="store_true", help="process the whole video as one piece (upstream behaviour)")
     ap.add_argument("--chunk-len", type=int, default=0, help="0 = whole shot in one pass if it fits, else automatic")
     ap.add_argument("--overlap-t", type=int, default=8)
@@ -150,7 +155,11 @@ def main():
         bounds = [0, *cuts, n]
         name = os.path.splitext(os.path.basename(path))[0]
         dst = os.path.join(args.out, f"{name}.mp4")
-        W, H = w * args.upscale, h * args.upscale
+        if args.out_short:
+            s = args.out_short / min(w, h)
+            W, H = int(round(w * s / 2)) * 2, int(round(h * s / 2)) * 2
+        else:
+            W, H = w * args.upscale, h * args.upscale
         writer = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
                                    "-r", f"{fps}", "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf",
                                    str(args.crf), "-pix_fmt", "yuv420p", dst], stdin=subprocess.PIPE)
@@ -162,19 +171,19 @@ def main():
             lq, chunk = read_range(path, a, b, w, h), args.chunk_len
             while True:
                 try:
-                    y = restore(pipe, prompt_emb, lq, args.upscale, chunk, args.overlap_t, tuple(args.tile),
+                    y = restore(pipe, prompt_emb, lq, (H, W), chunk, args.overlap_t, tuple(args.tile),
                                 tuple(args.overlap_hw))
                     break
                 except torch.OutOfMemoryError:
                     torch.cuda.empty_cache()
-                    chunk = max(((chunk or pass_frames(h * args.upscale, w * args.upscale)) // 2 - 1) // 8 * 8 + 1, 17)
+                    chunk = max(((chunk or pass_frames(H, W)) // 2 - 1) // 8 * 8 + 1, 17)
                     print(f"  OOM, retrying with chunk_len {chunk}", flush=True)
             writer.stdin.write(np.ascontiguousarray(y).tobytes())
             shots.append({"start_frame": a, "end_frame": b, "seconds": round(time.time() - ts, 1), "chunk_len": chunk})
         writer.stdin.close()
         writer.wait()
         info = {"input": path, "output": dst, "frames": n, "input_size": [w, h], "output_size": [W, H],
-                "upscale": args.upscale, "shot_aware": not args.no_shots, "shots": shots,
+                "scale": round(W / w, 4), "shot_aware": not args.no_shots, "shots": shots,
                 "cut_method": None if args.no_shots else "PySceneDetect AdaptiveDetector (adup.analysis.shots)",
                 "chunk_len": args.chunk_len, "tile": args.tile, "vae_tiling": not args.no_vae_tiling,
                 "seconds": round(time.time() - t, 1), "peak_gpu_gib": round(torch.cuda.max_memory_allocated() / 2**30, 2)}

@@ -34,9 +34,10 @@ assets/           字体、人脸检测模型
 | `ultravideo/8k/` | 228 条 8K 片段，2K+ 竖屏 GT 的主要来源 | 同上 |
 | `unsplash_lite/` | Unsplash Lite 的照片元数据（`*.tsv000`）；`images/` 是渲染时按需下载的照片 | 允许内部商用训练 |
 | `ui_screens/` | 合成的手机 App 界面长截图（录屏镜头的 GT），12 张 | 自有 |
+| `kwaivir/` | 只有 `manifest.csv` 和 `gate_1080.csv`：指向 `benchmarks/KwaiVIR/train/synthetic/HQ-synthetic*/` 的 200 条原生竖屏 1080×1920 短视频，类别来自快手标签 | NTIRE 2026 比赛数据，仅限研究 |
 
 每个视频目录里有 `manifest.csv`（素材清单，下载脚本写入）和 `gate_<GT 短边>.csv`（预筛结果，`adup/hq/gate.py`
-写入；目前只有 8K 跑过，4K 的预筛留给服务器）。
+写入）。v7 用 `gate_1080.csv`：KwaiVIR 已跑；UltraVideo 4K / 8K 留给服务器（现有的 `gate_1440.csv` 是 v5 的）。
 
 ## stats/：测量表
 
@@ -52,6 +53,7 @@ assets/           字体、人脸检测模型
 | `real_ads/meta_streams.csv` | Meta 广告的码流信息（编码器、码率） | 一次性分析 | 文档 |
 | `real_ads/groups/` | 上面这些测量用到的广告列表 | | |
 | `real_ads/splits.csv` | 每条真实广告属于 calibration / dev / test 哪一份（按广告 id 哈希，固定不变） | `real_ads/splits.py` | 校准只用 calibration，测试只用 test |
+| `real_ads/groups/<split>_{hd,sd}.txt` | 每一份的真实广告文件列表（HD：TikTok 和 Meta 720p；SD：Meta 360p） | `real_ads/splits.py` | 校准、基准的真实赛道 |
 | `hq/content_pool.csv` | UltraVideo 全部片段的主题（按文字描述） | `ugc_content.py pool` | `ugc/director.py` |
 | `hq/content_clips.csv` | 已下载片段的主题（CLIP 看画面） | `ugc_content.py clips` | `ugc/director.py` |
 | `hq/content_unsplash.csv` | Unsplash 照片（短边 ≥1440）的主题和横竖 | `ugc_content.py stills` | `ugc/director.py`（照片镜头）、`hq/ui_screens.py` |
