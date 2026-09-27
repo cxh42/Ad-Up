@@ -1,11 +1,11 @@
 # Ad-Up
 
-Ad-Up 做的是面向 UGC 广告的真实世界视频超分：把 576p–720p 的广告放大到 2K/4K。做法是微调 DOVE，
-训练数据是自己造的 (GT, LQ) 配对：
-1. 采集真实广告，测出它们长什么样、被怎么退化；
-2. 找 2K 及以上（横竖都有）的高质量素材；
-3. 把素材做成"像真实 UGC 广告"的 GT（剪辑、手持相机、手机色彩、字幕……）；
-4. 按真实广告的退化生成 LQ。
+Ad-Up（proposal 里叫 AdVSR）做的是面向 UGC 广告的真实世界视频超分：把 360p–720p 的广告放大到 1080p
+（1920×1080 / 1080×1920）。做法是先建数据集和基准，再微调 DOVE，训练数据是自己造的 (GT, LQ) 配对：
+1. 采集真实广告，测出它们长什么样、被怎么退化；真实广告分成 calibration / dev / test，只做校准和评测；
+2. 找 2K 及以上的高质量素材，缩到 1080p 做 GT，横竖各半；
+3. 把素材做成"像真实 UGC 广告"的 GT（剪辑、手持相机、字幕、贴纸……），同时输出文字区域的 mask；
+4. 用 Real-ESRGAN / RealBasicVSR 式的二阶退化生成 360 / 540 / 720p 的 LQ。
 
 整体流程和调研结论见 `docs/ugc_dataset.md`，数据目录见 `data/README.md`。
 给导师的进展汇报（单个 HTML 文件，下载后离线打开）：`docs/progress/`。
@@ -25,6 +25,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     tiktok_topads.py      TikTok Creative Center Top Ads
     meta_adlib_web.py     Meta 广告库网页（不需要 token）
     contact_sheets.py     按行业生成帧缩略图拼图
+    splits.py             真实广告按广告 id 分 calibration / dev / test -> data/stats/real_ads/splits.csv
   analysis/            ②  测量：真实广告的统计 -> data/stats/；合成数据的校准 -> outputs/calibration/
     ugc_look.py           逐镜头的"UGC 观感"：手持抖动、平移、景深、色彩、人脸、版式
     ugc_content.py        内容主题（CLIP / 句向量）：真实广告、素材池、照片，以及主题覆盖表
@@ -46,11 +47,11 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     sequence.py           镜头之间的转场（硬切、叠化、甩镜、黑场、白场）
     look.py               手机色彩风格，按真实广告的色彩分布匹配
     text.py、fonts.py     烧录字幕、标题、贴纸、小字（按真实广告 OCR 统计设计）；OFL 开源字体
-  degrade/             ⑤  GT -> LQ 的退化（按真实广告校准）
-    capture.py            拍摄 / ISP：运动模糊、虚焦、噪声、降噪美颜、锐化
-    platform.py           剪辑导出、平台缩放 + 编码前预处理 + 转码（H.264 / VP9 / AV1 / HEVC）、二次上传
-configs/pairs/           每个数据集版本一个参数文件，分 gt / ugc / degrade 三段：v6.yaml（当前，以 Meta 为主）、
-                          v5.yaml（已生成的 ugc_v5_* 数据集用的）；更早的版本在 git 历史里
+  degrade/             ⑤  GT -> LQ 的退化
+    second_order.py       二阶退化（RealBasicVSR 结构）：两轮 模糊→缩放→噪声→JPEG→H.264/VP9，最后缩到 LQ 尺寸；
+                          参数分 core（日常，待校准）和 tail（RealBasicVSR 原版，重退化）
+    kernels.py            模糊核（来自 BasicSR / mmagic，Apache-2.0）
+configs/pairs/v7.yaml     当前数据集版本的全部参数，分 gt / ugc / degrade 三段；旧版本在 git 历史里
 training/dove/            DOVE：infer.py（按镜头、显存可控的推理）和微调计划
 third_party/              上游仓库，以 git submodule 引入，不做修改：DOVE（训练/推理）、DOVER（视频质量指标）；
                           权重放在各自目录内且不入库（DOVE/pretrained_models/、DOVER/pretrained_weights/DOVER.pth）
@@ -83,6 +84,7 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 .venv/bin/python -m adup.real_ads.tiktok_topads
 .venv/bin/python -m adup.real_ads.meta_adlib_web
 .venv/bin/python -m adup.real_ads.contact_sheets data/real_ads/<source>/<date>
+.venv-iqa/bin/python -m adup.real_ads.splits                                         # calibration / dev / test
 
 # ② 测量真实广告 -> data/stats/real_ads/（管线读取的校准目标）
 .venv-iqa/bin/python -m adup.analysis.ugc_look      tiktok data/stats/real_ads/ugc_look.csv <videos...>
@@ -94,19 +96,19 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 .venv-iqa/bin/python -m adup.hq.ultravideo 300 --per-source 4 --kind both              # 4K -> data/hq/ultravideo/4k/
 .venv-iqa/bin/python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both   # 8K -> data/hq/ultravideo/8k/
 .venv/bin/python     -m adup.hq.ui_screens --n 300                                     # 录屏页面；--dpr 6 做 4K
-.venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --gt-short 1440 --out data/hq/ultravideo/4k/gate_1440.csv
+.venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --out data/hq/ultravideo/4k/gate_1080.csv
 .venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/hq/content_clips.csv data/hq/ultravideo/{4k,8k}/manifest.csv
 .venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/hq/content_pool.csv
 .venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/hq/content_unsplash.csv
 .venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/hq/content_coverage.csv
 
-# ④⑤ 编排 + 生成配对 -> data/pairs/<数据集>/（参数：configs/pairs/v6.yaml；--scale auto 让 LQ 短边在 720/576/540 之间抽）
+# ④⑤ 编排 + 生成配对 -> data/pairs/<数据集>/（参数：configs/pairs/v7.yaml；GT 1080p，--scale auto 让 LQ 短边在 360/540/720 之间抽）
 .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \
-    --gate data/hq/ultravideo/{4k,8k}/gate_1440.csv --stills data/stats/hq/content_unsplash.csv \
-    --screens data/hq/ui_screens/manifest.csv --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
-.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --gt-short 1440 --scale auto
+    --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \
+    --screens data/hq/ui_screens/manifest.csv --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
+.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
 # 不经编排、每条素材直接做一个单镜头配对（对照用）
-.venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_2k_x2 --scale 2
+.venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 --scale auto
 
 # 校准：给合成集打分（写到 outputs/calibration/），再和真实广告比较分布
 .venv-iqa/bin/python -m adup.analysis.degradation_stats <group> outputs/calibration/degradation.csv <videos...>

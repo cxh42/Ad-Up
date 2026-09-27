@@ -4,27 +4,27 @@ Input is either ad specs from adup.ugc.director (--sequences specs.jsonl, the no
 HQ clips (--manifest, one plain shot per clip). Parameters come from one dataset config (configs/pairs/<version>.yaml,
 sections gt / ugc / degrade). Everything streams frame by frame, so 2K / 4K GT and 40 s ads fit in memory.
 
-Per ad (random parameters are drawn once per LQ variant and held fixed over the ad, like a real upload):
-  GT        1. geometry: aspect ratio from the spec, GT short side --gt-short (never upscaled), LQ size from --scale
-               (a factor, or "auto": LQ short side drawn from degrade.lq_short)
+Per ad (random parameters are drawn once per LQ variant and held fixed over the ad):
+  GT        1. geometry: aspect ratio from the spec, GT short side --gt-short (1080 = 1920x1080 / 1080x1920, never
+               upscaled), LQ size from --scale (a factor, or "auto": LQ short side drawn from degrade.lq_short)
             2. gate (hq/gate.py) unless the spec's clips were pre-gated
             3. render each shot (ugc/render.py: face-aware crop, virtual handheld camera, layouts, stills, slides,
                screen recordings) and join them with transitions (ugc/sequence.py)
-            4. phone colour look matched to a real ad shot (ugc/look.py), camera-captured shots only
-            5. burned-in text: captions, hook titles, stickers, fine print (ugc/text.py)
-  LQ        6. capture / ISP: motion blur, defocus, noise, denoise / skin smoothing, sharpening (degrade/capture.py)
-            7. editing-app export, platform resize + pre-processing + H.264 / VP9 / AV1 / HEVC, re-upload
-               (degrade/platform.py)
+            4. optional phone colour look (ugc/look.py; off in v7), camera-captured shots only
+            5. burned-in text: captions, hook titles, stickers, fine print (ugc/text.py), and its per-frame mask
+  LQ        6. second-order degradation (degrade/second_order.py): stage 1 (blur, resize, noise, JPEG, H.264 / VP9)
+               while the GT is rendered, then stage 2 and the final resize / compression from the stage-1 file
 Frame count and fps are preserved end to end, so GT and LQ stay frame-aligned.
 
-Output (data/pairs/<dataset>/): config.yaml (the config used) and one directory per ad with gt.mp4, lq_<k>.mp4 and
-meta.json (every sampled parameter); multi-shot ads also get shots/shot_<i>_{gt,lq_<k>}.mp4 (frame-exact, lossless)
-and meta.json["shots"] with each shot's source and boundaries.
+Output (data/pairs/<dataset>/): config.yaml (the config used) and one directory per ad with gt.mp4, lq_<k>.mp4,
+mask.mkv (overlay alpha per frame, lossless FFV1 gray) and meta.json (every sampled parameter, the split, text boxes);
+multi-shot ads also get shots/shot_<i>_{gt,lq_<k>}.mp4 (frame-exact, lossless) and meta.json["shots"] with each shot's
+source and boundaries.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --gt-short 1440 --scale auto
-  .venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo_4k/manifest.csv --out data/pairs/plain_2k_x2 \
-      --gt-short 1440 --scale 2
+  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
+  .venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 \
+      --scale auto
 """
 
 import argparse
@@ -39,14 +39,17 @@ import pandas as pd
 import yaml
 
 from adup.config import add_config_args, load_config
-from adup.degrade.capture import apply_capture, sample_capture
-from adup.degrade.platform import edit_codec, finish_variant, pick_weighted, sample_chain
+from adup.degrade.second_order import finish, sample_plan, stage1_writer
 from adup.hq.gate import crop_filter, gate_ok, gate_stats
 from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, max_gt_short, probe, split_at
 from adup.ugc.look import LOOK_STATS, apply_look, match_look, real_look_targets, sample_look, tone_lut
 from adup.ugc.render import ShotRenderer
 from adup.ugc.sequence import sequence_frames, shot_ranges
-from adup.ugc.text import draw_text, plan_text
+from adup.ugc.text import draw_mask, draw_text, plan_text
+
+
+def pick_weighted(rng, weights):
+    return rng.choices(list(weights), weights=list(weights.values()))[0]
 
 
 def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
@@ -106,34 +109,37 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
     os.makedirs(out_dir, exist_ok=True)
     meta = {"id": seq["id"], "purpose": seq.get("purpose"), "fps": fps, "frames": n, "gt_size": [gw, gh],
             "lq_size": [lw, lh], "scale": scale, "aspect": aspect, "gate": gates, "look": look,
-            "render": [r.info for r in renderers], "text": text_meta,
+            "render": [r.info for r in renderers], "text": text_meta, "split": seq.get("split"),
             "config": config, "variants": []}
     with tempfile.TemporaryDirectory(dir=out_dir) as tmp:
-        caps = [sample_capture(rng, deg) for _ in range(variants)]
-        chains = [sample_chain(rng, deg) for _ in range(variants)]
+        prng = np.random.default_rng(rng.randint(0, 2 ** 31))
+        plans = [sample_plan(prng, deg) for _ in range(variants)]
         nprngs = [np.random.default_rng(rng.randint(0, 2 ** 31)) for _ in range(variants)]
         gt_w = Writer(os.path.join(out_dir, "gt.mp4"), gw, gh, fps, GT_H264)
-        edits = [Writer(os.path.join(tmp, f"edit_{k}.mp4"), gw, gh, fps, edit_codec(ch)) for k, ch in enumerate(chains)]
-        noise_gain = (gw / lw) / 1.5
+        mask_w = Writer(os.path.join(out_dir, "mask.mkv"), gw, gh, fps, ["-c:v", "ffv1"], pix_fmt="gray", in_fmt="gray")
+        stage1 = [stage1_writer(p, os.path.join(tmp, f"s1_{k}.mkv"), (gw, gh), fps, g)
+                  for k, (p, g) in enumerate(zip(plans, nprngs))]
         with ThreadPoolExecutor(max_workers=variants + 1) as pool:      # variants in parallel (cv2 / numpy drop the GIL)
             for i, (f, vel, camera) in enumerate(sequence_frames(shots, transitions, renderers, rng)):
-                if camera:                          # screen recordings and text slides are digital: no phone look / ISP
+                if camera and look:                 # screen recordings and text slides are digital: no phone look
                     f = apply_look(f, look, lut)
                 draw_text(f, i, items)
-                jobs = [pool.submit(apply_capture, f, cap, nprng, noise_gain, vel) if camera else None
-                        for cap, nprng in zip(caps, nprngs)]
+                mask = np.zeros((gh, gw), np.uint8)
+                draw_mask(mask, i, items)
+                v = vel if camera else (0.0, 0.0)   # motion blur only follows the virtual camera
+                jobs = [pool.submit(st, f, v) for st, _ in stage1]
                 gt_w.write(f)
-                for w, j in zip(edits, jobs):
-                    w.write(j.result() if j is not None else f)
-        gt_w.close()
-        for w in edits:
+                mask_w.write(mask)
+                for (_, w), j in zip(stage1, jobs):
+                    w.write(j.result())
+        for w in [gt_w, mask_w] + [w for _, w in stage1]:
             w.close()
-        for k, (cap, chain) in enumerate(zip(caps, chains)):
+        for k, (plan, (st, _), nprng) in enumerate(zip(plans, stage1, nprngs)):
             out = os.path.join(out_dir, f"lq_{k}.mp4")
             vt = os.path.join(tmp, f"v{k}")
             os.makedirs(vt)
-            info = finish_variant(os.path.join(tmp, f"edit_{k}.mp4"), out, chain, lw, lh, n / fps, vt)
-            meta["variants"].append({"file": out, "capture": cap, "chain": chain, **info})
+            info = finish(plan, os.path.join(tmp, f"s1_{k}.mkv"), st.out_size, out, (lw, lh), fps, n, nprng, vt)
+            meta["variants"].append({"file": out, "plan": plan, "stage1_size": list(st.out_size), **info})
 
     if len(shots) > 1:
         cuts = [a for a, _ in ranges[1:]]
@@ -187,7 +193,7 @@ def main():
     src.add_argument("--sequences", help="JSONL of ad specs from adup.ugc.director")
     src.add_argument("--manifest", help="CSV with a `file` column of single-shot HQ clips")
     ap.add_argument("--out", help="dataset directory (default: the directory of --sequences)")
-    ap.add_argument("--gt-short", type=int, default=1440, help="GT short side (1440 = 2K, 2160 = 4K)")
+    ap.add_argument("--gt-short", type=int, default=1080, help="GT short side (1080 = 1920x1080 / 1080x1920)")
     ap.add_argument("--scale", default="2", help="GT / LQ factor, or 'auto' to sample the LQ short side (degrade.lq_short)")
     ap.add_argument("--variants", type=int, default=2, help="LQ versions per GT")
     ap.add_argument("--max-frames", type=int, default=150, help="--manifest only: frames per clip")

@@ -1,7 +1,11 @@
 # UGC 广告配对数据集：从单条高质量视频到"真实 UGC 广告"配对
 
-目标：用 **2K 及以上**（短边 ≥ 1440，横竖都有）的高质量视频，做出**看起来像真实 UGC 广告**的 GT，
-再按 TikTok / Meta 实测的退化生成 LQ，得到 UGC 广告领域的 (GT, LQ) 配对。
+目标（v7，按 proposal 和 2026-09-26 导师会议）：把 360p–720p 的 UGC 广告超分到 **1080p**（1920×1080 / 1080×1920）。
+用 2K 以上的高质量素材缩到 1080p 做 GT，横竖各半，做出**看起来像真实 UGC 广告**的 GT，再用 Real-ESRGAN / RealBasicVSR
+式的二阶退化生成 360 / 540 / 720p 的 LQ（×3 / ×2 / ×1.5），得到 UGC 广告领域的 (GT, LQ) 配对。
+
+v5 及以前的目标是 2K GT、LQ 540–720，退化是"拍摄 → 剪辑导出 → 平台转码 → 二次上传"的链式模拟；
+第 4 节之后的校准数字是 v5 的，v7 还需要用真实 360p / 720p 广告重新校准。
 
 整条流程：
 
@@ -13,15 +17,18 @@ HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界�
   → 生成 adup/make_pairs.py            按 specs 逐条生成配对：
        GT：渲染 ugc/render.py         人脸感知裁剪 + 虚拟手持相机（ugc/camera.py），只缩小不放大
            转场 ugc/sequence.py
-           风格 ugc/look.py            按真实广告的色彩分布匹配手机观感
-           文字 ugc/text.py            字幕、标题、贴纸、小字
-       LQ：拍摄 degrade/capture.py    运动模糊（随相机速度）、虚焦、噪声、降噪/美颜、锐化
-           平台 degrade/platform.py   剪辑导出 → 缩小 + 编码前预处理 → 平台转码 → 二次上传
-  → 输出 data/pairs/<数据集>/：整段 + 逐镜头配对，meta.json 记录每一步参数
+           风格 ugc/look.py            手机色彩（v7 关闭）
+           文字 ugc/text.py            字幕、标题、贴纸、小字，同时输出逐帧 mask
+       LQ：degrade/second_order.py    二阶退化：两轮 模糊→缩放→噪声→JPEG→H.264/VP9，最后缩到 LQ 尺寸
+  → 输出 data/pairs/<数据集>/：整段 + 逐镜头配对 + 文字 mask，meta.json 记录每一步参数和所属划分
 ```
 
-所有参数在一个文件里：`configs/pairs/v6.yaml`（当前；已生成的 `ugc_v5_*` 用的是 `v5.yaml`），分 `gt`（预筛）、`ugc`（编排、相机、色彩、文字）、
+所有参数在一个文件里：`configs/pairs/v7.yaml`，分 `gt`（预筛）、`ugc`（编排、相机、色彩、文字、划分）、
 `degrade`（退化）三段。管线读取的真实广告统计在 `data/stats/`（见 `data/README.md`）。
+
+**划分**：合成数据按源视频（UltraVideo 的 YouTube id 哈希）分成 train / dev / test = 80 / 10 / 10%，合成之前就分好，
+一条广告只用同一划分的片段、照片和录屏；真实广告按广告 id 分成 calibration / dev / test = 30 / 20 / 50%
+（`adup/real_ads/splits.py` → `data/stats/real_ads/splits.csv`），测试集不参与任何调参。
 
 ## 1. 真实 UGC 广告调研
 
@@ -91,9 +98,9 @@ HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界�
 
 | 模块 | 做法 | 依据 / 标定 |
 |---|---|---|
-| 裁剪 | 有人脸时脸放在水平中线、画面上 1/3（自拍构图）；没有人脸时选纹理最多的位置。9:16 在 4K 横屏上裁不出 1440x2560 时，用能裁出的最大竖屏 1214x2158（不放大；这类广告没有多余像素，不额外加手持抖动和放大镜头） | YuNet 人脸检测 |
+| 裁剪 | 有人脸时脸放在水平中线、画面上 1/3（自拍构图）；没有人脸时选纹理最多的位置。v7 的 1080p 目标下，竖屏从 4K 横屏裁 1215×2160 再缩到 1080×1920，不放大 | YuNet 人脸检测 |
 | 虚拟手持相机 `ugc/camera.py` | 0.5–6 Hz 的 1/f 带限抖动、滚转、走路上下晃动（约 2 Hz）、慢漂移、缓推缓拉。所有运动都来自素材多出来的像素（工作分辨率 ≤ 余量），余量不够时自动减小幅度 | 从真实广告的抖动分布抽目标值，只补"目标² − 素材自身²"的差额；计划幅度和测量值的换算系数为 1.07（在静图上标定） |
-| 手机色彩 `ugc/look.py` | 白平衡、曝光、高光软削顶、暗部提亮、S 曲线、饱和度（YCrCb） | 联合抽取一个真实镜头的五项统计作为目标，在预览帧上迭代 6 次逼近。**成品复核不合格**（见第 6 节）：目标与素材内容无关，成品整体偏艳、偏暖、暗部偏亮 |
+| 手机色彩 `ugc/look.py` | 白平衡、曝光、高光软削顶、暗部提亮、S 曲线、饱和度（YCrCb） | 联合抽取一个真实镜头的五项统计作为目标，在预览帧上迭代 6 次逼近。**成品复核不合格**（见第 6 节）：目标与素材内容无关，成品整体偏艳、偏暖、暗部偏亮。**v7 关闭** |
 | 选素材 `ugc/director.py --n-ads` | 按"主题在真实广告中的占比 ÷ 素材池中该主题的数量"加权抽取，每条素材最多用 3 次 | 主题：CLIP 直接看片段中间帧（含"风景、古董、废墟"等非广告类别），文字描述只作后备 |
 | 编排 `ugc/director.py` | 画幅按 Meta 广告的分布（9:16 80%、4:5 8%、1:1 4%、16:9 8%）。按真实镜头长度切分；70% 跳剪（跳过 0.1–0.8 秒）；交替普通构图和放大 1.12–1.3 倍；12% 开场大字卡片，15% 结尾 CTA 卡片；15% 插同主题照片；5% 画中画反应；5% 的竖屏广告插入录屏（科技 / App 类 20%），口播素材一半做成"录屏 + 人脸小窗" | 真实节奏：每 1.5–3 秒一切；录屏约占画面 3%，文字卡片约 6.6% |
 | 版式 `ugc/render.py` | 模糊填充（横屏放进竖屏）、上下分屏（第二格用同源的其他镜头或同类别片段）、画中画、左右合拍、幻灯片、录屏 | 按真实出现率：9:16 广告用横屏素材时 8% 做成竖屏版式（实测模糊填充 Meta 4.8%、TikTok 1.8%，分屏约 3%） |
@@ -102,28 +109,41 @@ HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界�
 
 数字画面（录屏、幻灯片）不套手机色彩，也不做拍摄阶段的退化，只经过剪辑导出和平台转码。
 
-## 4. 退化（LQ）
+## 4. 退化（LQ，v7）
 
-代码：`adup/degrade/capture.py`（拍摄 / ISP）、`adup/degrade/platform.py`（剪辑导出、平台转码、二次上传）；
-参数：`configs/pairs/v6.yaml` 的 `degrade` 段，v5 新增的三项在文件里标了 `[v5 新增]`。
-在 v4（`docs/ugc_degradations.md` 第 6 节）基础上：
-- **平台预处理**：编码前做锐化（20%）或降噪（20%），在缩到 LQ 尺寸之后执行。
-- **LQ 尺寸混合**：`--scale auto`，2K GT 的 LQ 短边按 720 / 576 / 540 = 60% / 30% / 10% 抽取，
-  对应真实输入的 576–720p（×2、×2.5、×2.67）。4K GT 用 `--gt-short 2160` 时是 ×3 到 ×4。
-- **运动模糊**：沿虚拟相机每帧的速度做线性模糊，模糊长度 = 速度 × 快门比例（0.2–1.0），60% 的变体有。
-- 编码器混合（H.264 / VP9 / AV1 / HEVC）、二次上传、字幕烧录与之前相同。
+代码：`adup/degrade/second_order.py`（模糊核来自 BasicSR / mmagic，`adup/degrade/kernels.py`）；
+参数：`configs/pairs/v7.yaml` 的 `degrade` 段。结构和 RealBasicVSR 的训练流程相同（DOVE 的在线退化也是这一套）：
 
-校准结果见第 6 节。
+```
+GT 1080p --第一阶段--> --第二阶段--> --最后一步--> LQ 360 / 540 / 720p
+  第一阶段  [运动模糊] → 模糊 → [锐化] → 缩放 → 噪声 → JPEG → 视频压缩（H.264 或 VP9）
+  第二阶段  模糊 → 缩放 → 噪声 → JPEG
+  最后一步  {视频压缩, [缩到 LQ 尺寸 → sinc 滤波]}，两者先后随机
+```
+
+和 RealBasicVSR 的不同：
+- **离线、整段固定**：每个 LQ 版本的参数抽一次、整段不变（时间上连贯），只有噪声逐帧抽；视频压缩是真的用 ffmpeg 编码。
+- **编码器**：只用 H.264（libx264）和 VP9（libvpx-vp9），按导师意见去掉 HEVC、AV1；最终用哪些等 Meta 回复。
+  码率用每像素比特（bpp）表示，这样在任何帧尺寸下含义相同；RealBasicVSR 的 1e4–1e5 bit/帧（256 px 裁块）约等于 0.15–1.5 bpp。
+- **两套参数**：`core`（日常退化，初值参考 v5 的校准，待用真实 360p/720p 重新校准）和 `tail`（RealBasicVSR 原版范围，
+  重噪声、重模糊，覆盖"看不清"的输入），每个 LQ 版本以 `tail_prob = 0.2` 的概率用 `tail`。
+- **UGC 额外项**（只在 `core` 的第一阶段）：沿虚拟相机速度的运动模糊、手机 ISP 式锐化（v5 校准时发现真实广告有明显锐化光晕）。
+- **LQ 尺寸**：`--scale auto` 时短边在 360 / 540 / 720 中等概率抽取。
+
+存储：最后一步是 H.264 编码时直接保存码流；VP9 或最后一步是缩放时，存成逐帧精确的无损 H.264（4:2:0）。
+单条 3 秒广告、2 个 LQ 在本机约 30 秒。
 
 ## 5. 输出
 
 每个数据集一个目录 `data/pairs/<数据集>/`：`specs.jsonl`（director 的编排结果）、`config.yaml`（生成时用的参数），
 以及每条广告一个子目录：
 - `gt.mp4`、`lq_0.mp4`、`lq_1.mp4`：整段；
+- `mask.mkv`：文字叠加层的逐帧 alpha（0–255，无损 FFV1 灰度），用于文字区域的评测和损失加权；
+  只包含 `ugc/text.py` 画的字幕、标题、贴纸、小字，整屏的文字卡片镜头不在其中（在 meta.json 的 render 里标为 slide）；
 - `shots/shot_XXX_{gt,lq_k}.mp4`：多镜头时的逐镜头版本，逐帧精确、无损；
-- `meta.json`：规格、画幅、GT / LQ 尺寸，每个镜头的渲染信息（裁剪、放置方式、相机参数、版式），色彩参数和目标，文字元素的位置和帧范围，每个变体的退化参数，镜头边界和来源。
+- `meta.json`：所属划分（split），规格、画幅、GT / LQ 尺寸，每个镜头的渲染信息（裁剪、放置方式、相机参数、版式），色彩参数和目标，文字元素的位置和帧范围，每个变体的退化参数，镜头边界和来源。
 
-本机现有的配对数据（都是 v5 流程，GT 短边 1440，本机只做测试，批量在服务器上跑）：
+本机现有的配对数据（都是 v5 流程，GT 短边 1440，已被 v7 取代；本机只做测试，批量在服务器上跑）：
 
 | 目录 | 内容 | 用途 |
 |---|---|---|
@@ -209,6 +229,7 @@ HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界�
 
 - 主题和剪辑节奏对上了。v5 竖屏严重不足（4K 横屏裁不出 1440x2560，8K 全池只有约 230 条）；
   v6 允许 4K 横屏裁出的最大竖屏（1214x2158），9:16 升到 76%，模糊填充 / 分屏降到 3.4% / 1.9%，接近真实。
+- v7 按导师意见横竖各半（训练数据两种都要）；真实测试集保持真实的竖屏比例。
 - 按主题加权会反复用少数美妆、服饰片段，素材多样性是瓶颈。
 
 ## 7. 在服务器上批量生成
@@ -221,17 +242,17 @@ HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界�
 python -m adup.hq.ultravideo 300 --per-source 4 --kind both            # 4K -> data/hq/ultravideo/4k/
 python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K -> data/hq/ultravideo/8k/
 python -m adup.hq.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
-# 预筛（2K 与 4K 各一份）
-python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --gt-short 1440 --out data/hq/ultravideo/4k/gate_1440.csv
-python -m adup.hq.gate --manifest data/hq/ultravideo/8k/manifest.csv --gt-short 1440 --out data/hq/ultravideo/8k/gate_1440.csv
+# 预筛（GT 1080p）
+python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --out data/hq/ultravideo/4k/gate_1080.csv
+python -m adup.hq.gate --manifest data/hq/ultravideo/8k/manifest.csv --out data/hq/ultravideo/8k/gate_1080.csv
 # 按画面给素材打主题（CLIP，每条一帧）
 python -m adup.analysis.ugc_content clips data/stats/hq/content_clips.csv data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv
 # 编排（按真实广告主题占比抽素材）+ 生成
 python -m adup.ugc.director --clips data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv \
-    --gate data/hq/ultravideo/4k/gate_1440.csv data/hq/ultravideo/8k/gate_1440.csv \
+    --gate data/hq/ultravideo/4k/gate_1080.csv data/hq/ultravideo/8k/gate_1080.csv \
     --stills data/stats/hq/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
-    --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
-python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --gt-short 1440 --scale auto --variants 2
+    --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
+python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto --variants 2
 ```
 
 ## 8. 已知不足
@@ -241,6 +262,7 @@ python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --gt-shor
 - **没做的格式**：绿幕抠像、游戏画面、真实 App 录屏。合成界面是简化版。
 - **主题分类有噪声**：已下载的素材用 CLIP 看画面判定主题；未下载的素材池统计只靠文字描述，偏差更大。
 - **校准样本小**：只有 30 + 8 条广告；服务器上应该用几百条广告复核一次（`adup.analysis.compare`）。
-- **成品复核发现的问题**（第 6 节末）：手机色彩过头、感知质量上退化偏重、人脸不足、素材源少（竖屏已在 v6 解决）。
+- **成品复核发现的问题**（第 6 节末，v5）：手机色彩过头（v7 已关闭）、感知质量上退化偏重、人脸不足、素材源少。
+- **v7 的 `core` 退化参数还没校准**：初值参考 v5，需要用真实广告的 360p / 720p 文件（calibration 划分）重新校准。
 - **LQ 该模拟哪一环还没定**：见 `docs/ugc_degradations.md` 1.1。模型若放在 Meta 入库端，输入是广告主上传的原片，现在的退化链多算了一代 Meta 平台转码。
 - **文案和画面不对应**：字幕文案来自真实广告，但和画面主题不对应。对超分训练影响不大，文字主要作为纹理。

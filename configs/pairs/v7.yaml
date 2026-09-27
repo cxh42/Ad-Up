@@ -1,0 +1,218 @@
+# UGC 广告配对数据集 v7（2026-09-27，当前版本，按 proposal 和 9/26 导师会议定的方案）
+#
+# 一个文件管一个数据集版本的全部参数，按流程分三段：
+#   gt       GT 选取：预筛门槛、单片段模式的画幅
+#   ugc      把高质量素材做成"像真实 UGC 广告"的 GT：编排、虚拟手持相机、手机色彩、烧录文字（GT 和 LQ 都有）
+#   degrade  GT -> LQ：Real-ESRGAN / RealBasicVSR 式二阶退化（adup/degrade/second_order.py）
+# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director、gt.portrait_min_short）、adup.hq.gate（gt）。
+# 每条配对的 meta.json 记录实际抽到的参数；数据集目录下的 config.yaml 是生成时用的这份。
+# 临时改参数不用复制文件：--set degrade.tail_prob=0.3
+#
+# 版本历史（旧版本文件在 git 历史里；v5 生成了 data/pairs/ugc_v5_*，见 commit 69e1f6c）：
+#   v1–v4  拍摄/ISP -> 剪辑导出 -> 平台转码（H.264/VP9/AV1/HEVC）-> 二次上传 的链式退化，逐步校准
+#   v5     加入 UGC 化；GT 短边 1440，LQ 540–720
+#   v6     以 Meta 为主的画幅（未生成数据）
+#   v7     目标改为 1080p 输出：GT 1920x1080 / 1080x1920，横竖各半；LQ 360/540/720。
+#          退化换成二阶流程（导师要求按 Real-ESRGAN / RealBasicVSR 的标准设计），编码器只用 H.264 和 VP9；
+#          手机色彩先关闭（成品偏艳偏暖，proposal 里也没有）；按源视频划分 train / dev / test
+
+version: v7
+
+gt:
+  # 单片段模式（make_pairs --manifest）的 GT 画幅；director 编排的广告在 ugc.director.aspects 里选
+  aspects: {"9:16": 0.5, "16:9": 0.5}
+  # 9:16 在 --gt-short 下裁不出来时，用素材能裁出的最大竖屏（短边不低于此值）；1080p 目标下 4K 横屏够用，设为 null
+  portrait_min_short: null
+  # 预筛：在 GT 分辨率下测 3 帧
+  min_detail: 12.0              # 拉普拉斯方差下限（太平、太虚的画面不要）
+  luma_range: [30, 230]         # 平均亮度范围（过暗、过曝不要）
+  max_downup_psnr: 38.0         # 有效分辨率：最清晰区域 ×2 下采样再上采样的 PSNR 上限；更高 = 没有真细节
+
+ugc:
+  director:
+    aspects: {"9:16": 0.5, "16:9": 0.5}   # 横竖各半（9/26 会议）；真实广告 92–100% 是竖屏，测试集按真实分布
+    # 9:16 广告用横屏素材时，按这个概率做成竖屏版式（实测镜头占比：模糊填充 Meta 4.8%、TikTok 1.8%，分屏约 3%）
+    portrait_layout_prob: 0.08
+    portrait_layouts: {fit_blur: 0.65, split: 0.35}
+    # 镜头长度来自真实广告（data/stats/real_ads/shots.csv）；相邻镜头交替普通构图和放大
+    punch_in_prob: 0.4
+    punch_in_zoom: [1.12, 1.3]
+    jump_cut_prob: 0.7          # 跳剪：跳过一小段素材，像创作者剪掉停顿
+    jump_skip_s: [0.1, 0.8]
+    # 非跳剪处的转场类型和长度（帧）
+    transitions: {cut: 0.8, dissolve: 0.08, whip: 0.06, dip_black: 0.03, dip_white: 0.03}
+    transition_frames: {dissolve: [4, 12], whip: [4, 8], dip_black: [6, 12], dip_white: [6, 12]}
+    hook_slide_prob: 0.12       # 开场大字卡片
+    end_card_prob: 0.15         # 结尾 CTA 卡片（真实广告里纯文字卡片占画面 6.6%）
+    still_prob: 0.15            # 插入同主题照片（Ken Burns / 手持）
+    pip_prob: 0.05              # 画中画反应
+    screen_ad_prob: 0.05        # 竖屏广告插入 App 录屏（科技/App 类 ×4）；真实广告里录屏占画面约 3%
+    screen_pip_prob: 0.5        # 口播素材的录屏做成"录屏 + 人脸小窗"
+    other_theme_share: 0.02     # --n-ads 抽样时，非广告主题（风景、古董等）素材合计占的比例
+    # 按源视频（UltraVideo 的 YouTube id）划分，同一源的所有片段、照片、录屏只进一个划分，合成前就分好
+    split: {train: 0.8, dev: 0.1, test: 0.1}
+  camera:
+    # 虚拟手持相机。director 会按真实广告的抖动分布为每条广告改写 shake_rms，只补素材自身没有的那部分
+    shake_prob: 0.5
+    shake_rms: [0.15, 1.2]      # 画面宽度的百分比
+    walk_prob: 0.15
+    drift_prob: 0.5
+    drift_pct: [0.3, 2.0]
+    push_prob: 0.3
+    push_zoom: [1.03, 1.12]
+    base_zoom: [1.0, 1.0]
+    roll_per_pct: 0.15
+  still_camera: {shake_prob: 0.5, drift_prob: 0.8, push_prob: 0.8, push_zoom: [1.05, 1.2]}   # 照片镜头覆盖 camera 的这几项
+  look:
+    # 手机色彩：v7 关闭（look_prob 0）。成品复核发现偏艳偏暖（目标统计与素材内容无关），改好前不用
+    look_prob: 0.0
+    m_exposure: [0.75, 1.5]
+    m_white: [0.78, 1.0]
+    m_shadow_lift: [0.0, 0.1]
+    m_saturation: [0.7, 2.0]
+    m_warmth: [-0.06, 0.1]
+    contrast: [-0.05, 0.12]
+    tint: [-0.01, 0.02]
+    exposure: [1.03, 1.25]
+    shadow_lift: [0.0, 0.05]
+    highlight_rolloff: [0.5, 1.0]
+    knee: [0.6, 0.75]
+    white: [0.86, 0.98]
+    saturation: [1.1, 1.6]
+    warmth: [-0.01, 0.06]
+  text:
+    # 烧录文字（OCR 实测：约 95% 的真实广告几乎每帧都有字）；逐帧的文字 mask 存为 mask.mkv
+    text_prob: 0.95
+    caption_prob: 0.85          # 滚动字幕
+    hook_prob: 0.5              # 开头标题
+    sticker_prob: 0.45          # 贴纸（价格、折扣、CTA、#ad、评分、emoji）
+    fine_print_prob: 0.2        # 小字免责声明
+
+degrade:
+  # LQ 短边（make_pairs --scale auto）：360 / 540 / 720 -> 1080，即 ×3 / ×2 / ×1.5
+  lq_short: {360: 0.34, 540: 0.33, 720: 0.33}
+  # 每个 LQ 版本以 tail_prob 的概率用 RealBasicVSR 原版参数（tail，重退化），否则用 core（向真实广告校准）
+  tail_prob: 0.2
+
+  # ---------------------------------------------------------------- core：日常退化，初值，待用真实 360p/720p 校准
+  core:
+    stage1:                     # 拍摄 + 剪辑导出
+      blur:
+        prob: 0.5
+        kernels: {iso: 0.405, aniso: 0.225, generalized_iso: 0.108, generalized_aniso: 0.027,
+                  plateau_iso: 0.108, plateau_aniso: 0.027, sinc: 0.1}
+        kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]
+        sigma: [0.2, 1.5]
+        beta_gaussian: [0.5, 4]
+        beta_plateau: [1, 2]
+      resize:                   # 相对当前尺寸；创作者大多按原尺寸导出
+        mode: {up: 0.0, down: 0.4, keep: 0.6}
+        scale: [0.6, 1.0]
+        interp: {bilinear: 0.3333, area: 0.3333, bicubic: 0.3334}
+      noise:
+        prob: 0.4
+        type: {gaussian: 0.5, poisson: 0.5}
+        gaussian_sigma: [1, 6]   # 0–255 单位
+        poisson_scale: [0.05, 0.5]
+        gray_prob: 0.4
+      jpeg: {prob: 0.1, quality: [70, 95]}
+      compress:                 # 剪辑 App 导出 / 首次上传
+        prob: 1.0
+        codec: {h264: 0.7, vp9: 0.3}
+        bpp: [0.08, 0.5]        # 每像素比特，对数均匀
+        keyint: [30, 60, 120, 250]
+    extras:                     # UGC 额外项，只在第一阶段、缩放之前
+      motion_blur_prob: 0.5     # 沿虚拟相机速度的运动模糊，长度 = 速度 × 快门比例
+      shutter: [0.2, 1.0]
+      sharpen_prob: 0.6         # 手机 ISP / 平台的 unsharp mask 锐化（真实广告实测有明显锐化光晕）
+      sharpen_amount: [0.3, 1.0]
+      sharpen_sigma: [0.8, 2.0]
+    stage2:                     # 平台处理 / 转发
+      blur:
+        prob: 0.3
+        kernels: {iso: 0.405, aniso: 0.225, generalized_iso: 0.108, generalized_aniso: 0.027,
+                  plateau_iso: 0.108, plateau_aniso: 0.027, sinc: 0.1}
+        kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]
+        sigma: [0.2, 0.8]
+        beta_gaussian: [0.5, 4]
+        beta_plateau: [1, 2]
+      resize:
+        mode: {up: 0.1, down: 0.3, keep: 0.6}
+        scale: [0.6, 1.3]
+        interp: {bilinear: 0.3333, area: 0.3333, bicubic: 0.3334}
+      noise:
+        prob: 0.2
+        type: {gaussian: 0.5, poisson: 0.5}
+        gaussian_sigma: [1, 4]
+        poisson_scale: [0.05, 0.3]
+        gray_prob: 0.4
+      jpeg: {prob: 0.05, quality: [60, 95]}
+    final:                      # 平台转码：多数先缩到 LQ 尺寸再编码
+      compress_first_prob: 0.2
+      interp: {bilinear: 0.25, bicubic: 0.25, area: 0.25, lanczos: 0.25}
+      sinc: {prob: 0.3, kernels: {sinc: 1.0}, kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]}
+      compress:
+        prob: 1.0
+        codec: {h264: 0.6, vp9: 0.4}
+        bpp: [0.03, 0.15]       # 真实广告 720p H.264 中位数约 0.06
+        keyint: [60, 110, 150, 250]
+
+  # ---------------------------------------------------------------- tail：RealBasicVSR 原版参数（重退化、看不清的样本）
+  # 与 realbasicvsr_wogan_c64b20_2x30x8_lr1e-4_300k_reds.py 相同，除了：编码器 libx264/h264/mpeg4 -> H.264/VP9，
+  # 码率 1e4–1e5 bit/帧（256 px 裁块）换算成 0.15–1.5 bpp，参数整段固定（原版逐帧有小幅漂移）
+  tail:
+    stage1:
+      blur:
+        prob: 1.0
+        kernels: {iso: 0.405, aniso: 0.225, generalized_iso: 0.108, generalized_aniso: 0.027,
+                  plateau_iso: 0.108, plateau_aniso: 0.027, sinc: 0.1}
+        kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]
+        sigma: [0.2, 3]
+        beta_gaussian: [0.5, 4]
+        beta_plateau: [1, 2]
+      resize:
+        mode: {up: 0.2, down: 0.7, keep: 0.1}
+        scale: [0.15, 1.5]
+        interp: {bilinear: 0.3333, area: 0.3333, bicubic: 0.3334}
+      noise:
+        prob: 1.0
+        type: {gaussian: 0.5, poisson: 0.5}
+        gaussian_sigma: [1, 30]
+        poisson_scale: [0.05, 3]
+        gray_prob: 0.4
+      jpeg: {prob: 1.0, quality: [30, 95]}
+      compress:
+        prob: 1.0
+        codec: {h264: 0.5, vp9: 0.5}
+        bpp: [0.15, 1.5]
+        keyint: [30, 60, 120, 250]
+    extras: {motion_blur_prob: 0.0, shutter: [0.2, 1.0], sharpen_prob: 0.0, sharpen_amount: [0.3, 1.0], sharpen_sigma: [0.8, 2.0]}
+    stage2:
+      blur:
+        prob: 0.8
+        kernels: {iso: 0.405, aniso: 0.225, generalized_iso: 0.108, generalized_aniso: 0.027,
+                  plateau_iso: 0.108, plateau_aniso: 0.027, sinc: 0.1}
+        kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]
+        sigma: [0.2, 1.5]
+        beta_gaussian: [0.5, 4]
+        beta_plateau: [1, 2]
+      resize:
+        mode: {up: 0.3, down: 0.4, keep: 0.3}
+        scale: [0.3, 1.2]
+        interp: {bilinear: 0.3333, area: 0.3333, bicubic: 0.3334}
+      noise:
+        prob: 1.0
+        type: {gaussian: 0.5, poisson: 0.5}
+        gaussian_sigma: [1, 25]
+        poisson_scale: [0.05, 2.5]
+        gray_prob: 0.4
+      jpeg: {prob: 1.0, quality: [30, 95]}
+    final:
+      compress_first_prob: 0.5
+      interp: {bilinear: 0.3333, area: 0.3333, bicubic: 0.3334}
+      sinc: {prob: 0.8, kernels: {sinc: 1.0}, kernel_size: [7, 9, 11, 13, 15, 17, 19, 21]}
+      compress:
+        prob: 1.0
+        codec: {h264: 0.5, vp9: 0.5}
+        bpp: [0.15, 1.5]
+        keyint: [30, 60, 120, 250]

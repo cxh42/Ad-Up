@@ -16,18 +16,23 @@ For each HQ clip the director plans a short vertical (or square / landscape) ad 
 All knobs are in config section ugc.director (configs/pairs/<version>.yaml). Text overlays and the phone look are
 sampled later by adup.make_pairs. Only clips that passed the GT gate (adup.hq.gate, --gate) are used.
 
+Train / dev / test are separated by source before composition (ugc.director.split): every clip gets the split of its
+source video (UltraVideo's YouTube id, hashed), stills and screens get one from their own id, and an ad only uses
+material of its own split. Each spec carries its "split".
+
 With --n-ads, clips are drawn with probability proportional to (share of the clip's theme in real ads) / (number of
 clips of that theme), so the dataset's content follows real UGC ads (data/stats/hq/content_coverage.csv) instead of
 the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/4k/manifest.csv \
-      --gate data/hq/ultravideo/4k/gate_1440.csv --stills data/stats/hq/content_unsplash.csv \
-      --screens data/hq/ui_screens/manifest.csv --gt-short 1440 --n-ads 5000 --out data/pairs/ugc_v5_2k/specs.jsonl
-Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v5_2k/specs.jsonl --scale auto
+  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \
+      --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \
+      --screens data/hq/ui_screens/manifest.csv --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
+Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
 """
 
 import argparse
+import hashlib
 import json
 import os
 
@@ -109,6 +114,17 @@ def is_static(clip):
     return any(w in cm for w in ("stationary", "static", "fixed", "minimal", "still"))
 
 
+def split_of(key, ratios):
+    """Deterministic train / dev / test assignment of a source id by hash, with the given {split: share} ratios."""
+    u = int(hashlib.md5(str(key).encode()).hexdigest()[:8], 16) / 0x100000000
+    acc = 0.0
+    for name, share in ratios.items():
+        acc += share
+        if u < acc:
+            return name
+    return name
+
+
 def other_clip(rng, clips, clip, prefer_category=None):
     """Another clip for a split / pip part: same source video first (another moment of the shoot), else same category."""
     pools = [clips[(clips.youtube_id == clip.youtube_id) & (clips.clip_id != clip.clip_id)],
@@ -120,6 +136,11 @@ def other_clip(rng, clips, clip, prefer_category=None):
 
 
 def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames, screens=None, theme=None):
+    split = getattr(clip, "split", None)
+    if split is not None:                          # only material of the ad's own split
+        clips = clips[clips.split == split]
+        stills = stills[stills.split == split] if stills is not None else None
+        screens = (screens or {}).get(split)
     sw, sh, fps, nb = probe(clip.file)
     avail = int((nb or clip.frames) * SEQ_FPS / fps)
     total = min(max_frames, int(avail * 0.85))
@@ -234,7 +255,7 @@ def main():
     ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.hq.gate); clips must pass")
     ap.add_argument("--stills", help="stills table (data/stats/hq/content_unsplash.csv)")
     ap.add_argument("--screens", help="UI screen manifest (data/hq/ui_screens/manifest.csv), for screen-recording shots")
-    ap.add_argument("--gt-short", type=int, default=1440)
+    ap.add_argument("--gt-short", type=int, default=1080)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--max-frames", type=int, default=150)
     ap.add_argument("--per-clip", type=int, default=1, help="ads planned per HQ clip (without --n-ads)")
@@ -266,6 +287,10 @@ def main():
     if args.stills:
         stills = pd.read_csv(args.stills)
         stills = stills[stills.theme != "other"]
+    ratios = config["ugc"]["director"]["split"]
+    clips["split"] = clips.youtube_id.map(lambda k: split_of(k, ratios))
+    if stills is not None:
+        stills["split"] = stills.photo_id.map(lambda k: split_of(k, ratios))
     if args.limit:
         clips = clips.sample(min(args.limit, len(clips)), random_state=args.seed)
     lengths = shot_lengths()
@@ -273,7 +298,10 @@ def main():
     if args.screens:
         sm = pd.read_csv(args.screens)
         need = gt_geometry("9:16", args.gt_short, args.scale)[0]
-        screens = [f for f in sm.file if os.path.exists(f) and __import__("cv2").imread(f).shape[1] >= need] if len(sm) else None
+        ok = [f for f in sm.file if os.path.exists(f) and __import__("cv2").imread(f).shape[1] >= need]
+        screens = {}
+        for f in ok:
+            screens.setdefault(split_of(os.path.basename(f), ratios), []).append(f)
     n_out = 0
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     clips = clips.reset_index(drop=True)
@@ -298,7 +326,7 @@ def main():
             plan = plan_ad(rng, clip, clips, stills, lengths, cfg, args.gt_short, args.scale, args.max_frames, screens, theme)
             if plan is None:
                 continue
-            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "fps": SEQ_FPS,
+            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "split": clip.split, "fps": SEQ_FPS,
                     "pregated": bool(args.gate), **plan}
             f.write(json.dumps(spec) + "\n")
             n_out += 1

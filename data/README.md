@@ -22,7 +22,7 @@ assets/           字体、人脸检测模型
 | `tiktok_topads/20260923/`、`20260924/` | TikTok Creative Center Top Ads，55 + 42 条（576–720p）；`videos_1080p/` 是其中 18 条的 1080p 版本 |
 | `meta_adlib_web/20260924/` | Meta 广告库视频广告，164 条 |
 
-每个日期目录里：`videos/<行业或关键词>/*.mp4`，`summary.csv`（每条广告的元数据和文案，字幕文案也从这里取），
+每个日期目录里：`videos/<行业或关键词>/*.mp4`（Meta 广告库另有 `videos_sd/`，同一条广告的 360p 版本，2026-09-27 起的抓取才有），`summary.csv`（每条广告的元数据和文案，字幕文案也从这里取），
 `sheets/`（帧缩略图拼图），`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
 
 ## hq/：高质量素材
@@ -51,6 +51,7 @@ assets/           字体、人脸检测模型
 | `real_ads/degradation.csv`、`quality.csv` | 真实广告的退化指标和质量分 | `analysis/degradation_stats.py`、`quality.py` | `analysis/compare.py`（校准） |
 | `real_ads/meta_streams.csv` | Meta 广告的码流信息（编码器、码率） | 一次性分析 | 文档 |
 | `real_ads/groups/` | 上面这些测量用到的广告列表 | | |
+| `real_ads/splits.csv` | 每条真实广告属于 calibration / dev / test 哪一份（按广告 id 哈希，固定不变） | `real_ads/splits.py` | 校准只用 calibration，测试只用 test |
 | `hq/content_pool.csv` | UltraVideo 全部片段的主题（按文字描述） | `ugc_content.py pool` | `ugc/director.py` |
 | `hq/content_clips.csv` | 已下载片段的主题（CLIP 看画面） | `ugc_content.py clips` | `ugc/director.py` |
 | `hq/content_unsplash.csv` | Unsplash 照片（短边 ≥1440）的主题和横竖 | `ugc_content.py stills` | `ugc/director.py`（照片镜头）、`hq/ui_screens.py` |
@@ -68,17 +69,18 @@ assets/           字体、人脸检测模型
   specs.jsonl            每条广告的编排（镜头、来源、画幅、转场……）
   config.yaml            生成时用的参数（configs/pairs/<版本>.yaml 的副本）
   <广告 id>/
-    gt.mp4  lq_0.mp4  lq_1.mp4     整段
+    gt.mp4  lq_0.mp4  lq_1.mp4     整段（v7：GT 1920x1080 / 1080x1920，LQ 短边 360 / 540 / 720）
+    mask.mkv                       文字叠加层的逐帧 alpha（无损 FFV1 灰度）
     shots/shot_XXX_{gt,lq_k}.mp4   多镜头时的逐镜头版本（逐帧精确、无损）
-    meta.json                      每一步的参数、镜头边界和来源
+    meta.json                      每一步的参数、镜头边界和来源、所属划分（train / dev / test）
 ```
 
 | 目录 | 内容 |
 |---|---|
-| `ugc_v5_calib/` | 当前 v5 流程，30 条广告 × 2 个 LQ，用于校准 |
-| `ugc_v5_preview/` | 当前 v5 流程，8 条广告 × 1 个 LQ，按真实广告主题占比抽取，人工看效果用 |
+| `ugc_v5_calib/` | v5 流程（2K GT，已被 v7 取代），30 条广告 × 2 个 LQ，用于校准 |
+| `ugc_v5_preview/` | v5 流程（已被 v7 取代），8 条广告 × 1 个 LQ，按真实广告主题占比抽取，人工看效果用 |
 | `cuttest_2k_x2/` | 4 条多镜头序列，测 DOVE 在镜头切换处的表现 |
-| `archive/` | 旧版本：1080p GT 的配对（`uv_p1080_x2*`）、v1–v4 的校准集（`calib_*`）。已被 v5 取代 |
+| `archive/` | 旧版本：1080p GT 的配对（`uv_p1080_x2*`）、v1–v4 的校准集（`calib_*`）。已被取代 |
 
 这几个数据集是在引入 `config.yaml` 之前生成的，参数只记录在每条的 `meta.json` 里。
 

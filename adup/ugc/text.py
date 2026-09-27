@@ -369,3 +369,19 @@ def draw_text(frame, i, items):
                 im, a = animated(img, anim, i - f0)
                 paste(frame, im, cx, cy, a)
 
+
+def draw_mask(mask, i, items):
+    """Alpha (0-255) of every item active at frame index i, max-combined into mask (H x W uint8, modified in place).
+    Covers the overlays of this module; text slides rendered as whole shots (adup.ugc.render) are not included."""
+    H, W = mask.shape
+    for it in items:
+        for f0, f1, img, cx, cy, anim in it["segments"]:
+            if f0 <= i < f1:
+                im, a = animated(img, anim, i - f0)
+                arr = np.asarray(im)
+                h, w = arr.shape[:2]
+                x0, y0 = place(w, h, cx, cy, W, H)
+                x1, y1 = min(x0 + w, W), min(y0 + h, H)
+                alpha = (arr[:y1 - y0, :x1 - x0, 3].astype(np.float32) * a).astype(np.uint8)
+                np.maximum(mask[y0:y1, x0:x1], alpha, out=mask[y0:y1, x0:x1])
+

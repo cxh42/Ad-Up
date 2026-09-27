@@ -53,9 +53,9 @@ def stream_frames(path, vf, w, h, n):
 class Writer:
     """Pipe RGB frames into an ffmpeg encoder."""
 
-    def __init__(self, path, w, h, fps, codec_args):
-        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
-                                   "-s", f"{w}x{h}", "-r", f"{fps}", "-i", "-", *codec_args, "-pix_fmt", "yuv420p",
+    def __init__(self, path, w, h, fps, codec_args, pix_fmt="yuv420p", in_fmt="rgb24"):
+        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", in_fmt,
+                                   "-s", f"{w}x{h}", "-r", f"{fps}", "-i", "-", *codec_args, "-pix_fmt", pix_fmt,
                                    "-fps_mode", "passthrough", path], stdin=subprocess.PIPE)
         self.path = path
 

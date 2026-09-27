@@ -1,11 +1,14 @@
 """Download a small sample of video ads from the public Meta Ad Library website (no API token needed).
 
-The first results page embeds the ads' JSON (about 30 ads per query), including `video_hd_url` (the 720p file Meta
-serves) and `publisher_platform` (Facebook / Instagram / Audience Network / Messenger / Threads). We load one page
+The first results page embeds the ads' JSON (about 30 ads per query), including `video_hd_url` and `video_sd_url`
+(Meta's basic H.264 renditions of the ad, 720p and 360p on the short side) and `publisher_platform` (Facebook /
+Instagram / Audience Network / Messenger / Threads). Both renditions are saved: the pair is real-world LQ of the same ad at
+two sizes, for calibration and no-reference testing (neither is a clean ground truth). We load one page
 per keyword in headless Chrome and parse that JSON.
 
 Usage (from the repo root):  .venv/bin/python -m adup.real_ads.meta_adlib_web [--queries q1 q2 ...] [--per-query N]
-Output: data/real_ads/meta_adlib_web/<date>/videos/<query>/*.mp4, summary.csv
+Output: data/real_ads/meta_adlib_web/<date>/videos/<query>/<ad_id>.mp4 (HD) and videos_sd/<query>/<ad_id>.mp4 (SD),
+summary.csv
 """
 
 import argparse
@@ -55,6 +58,7 @@ def parse_ads(html):
             continue
         field = lambda k: (m.group(1) if (m := re.search(rf'"{k}":' + JSON_STR, part)) else None)
         platforms = re.search(r'"publisher_platform":\[(.*?)\]', part)
+        sd = re.search(r'"video_sd_url":' + JSON_STR, part)
         ads[ad_id] = {
             "ad_id": ad_id,
             "page_name": unescape(field("page_name")),
@@ -62,6 +66,7 @@ def parse_ads(html):
             "publisher_platform": platforms.group(1).replace('"', "") if platforms else None,
             "body": unescape(field("text")),
             "video_hd_url": unescape(hd.group(1)),
+            "video_sd_url": unescape(sd.group(1)) if sd else None,
         }
     return list(ads.values())
 
@@ -88,17 +93,21 @@ def main():
             os.makedirs(folder, exist_ok=True)
             for ad in ads[:args.per_query]:
                 path = f"{folder}/{ad['ad_id']}.mp4"
-                if not os.path.exists(path):
-                    try:
-                        v = requests.get(ad["video_hd_url"], headers={"User-Agent": UA}, proxies=PROXIES, timeout=120)
-                        v.raise_for_status()
-                        with open(path, "wb") as f:
-                            f.write(v.content)
-                    except Exception as e:
-                        print(f"  failed {ad['ad_id']}: {e}")
-                ok = os.path.exists(path)
-                rows.append({"query": q, **{k: v for k, v in ad.items() if k != "video_hd_url"},
+                sd_path = f"{folder.replace('/videos/', '/videos_sd/')}/{ad['ad_id']}.mp4"
+                for url, dst in ((ad["video_hd_url"], path), (ad["video_sd_url"], sd_path)):
+                    if url and not os.path.exists(dst):
+                        try:
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            v = requests.get(url, headers={"User-Agent": UA}, proxies=PROXIES, timeout=120)
+                            v.raise_for_status()
+                            with open(dst, "wb") as f:
+                                f.write(v.content)
+                        except Exception as e:
+                            print(f"  failed {ad['ad_id']} ({dst}): {e}")
+                ok, sd_ok = os.path.exists(path), os.path.exists(sd_path)
+                rows.append({"query": q, **{k: v for k, v in ad.items() if not k.endswith("_url")},
                              "aspect": video_info(path) if ok else None, "video_file": path if ok else None,
+                             "video_sd_file": sd_path if sd_ok else None,
                              "detail_url": f"https://www.facebook.com/ads/library/?id={ad['ad_id']}"})
             time.sleep(5)
     finally:

@@ -10,8 +10,8 @@ adup.analysis.ugc_look), so the director only adds the handheld shake that is mi
 make_pairs applies the same gate per shot when a spec was not pre-gated.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo_4k/manifest.csv --gt-short 1440 \
-      --out data/hq/ultravideo_4k/gate_1440.csv
+  .venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --gt-short 1080 \
+      --out data/hq/ultravideo/4k/gate_1080.csv
 """
 
 import argparse
@@ -107,7 +107,7 @@ def score_clip(path, gt_short, scale, frames, c, rng):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", nargs="+", required=True)
-    ap.add_argument("--gt-short", type=int, default=1440)
+    ap.add_argument("--gt-short", type=int, default=1080)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--frames", type=int, default=150)
     ap.add_argument("--out", required=True)
