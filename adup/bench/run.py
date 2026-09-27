@@ -136,9 +136,10 @@ def main():
         if args.max_frames:
             w, h, fps, n = probe(path)
             if n > args.max_frames:                      # trimmed, losslessly, to a temporary input
-                tmp = dst[:-4] + ".in.mkv"
+                tmp = dst[:-4] + ".in.mp4"                # lossless and in the source's own yuv420p: pixels unchanged
                 subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-frames:v", str(args.max_frames), "-an",
-                                "-c:v", "libx264rgb", "-qp", "0", tmp], check=True)
+                                "-c:v", "libx264", "-preset", "veryfast", "-qp", "0", "-pix_fmt", "yuv420p", tmp],
+                               check=True)
         src_path = tmp or path
         w, h, fps, n = probe(src_path)
         size = out_size(w, h, args.out_short)
