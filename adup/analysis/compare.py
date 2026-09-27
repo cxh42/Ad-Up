@@ -8,7 +8,6 @@ quartiles and a normalized 1-D Wasserstein distance (in units of the real group'
 
 import sys
 
-import numpy as np
 import pandas as pd
 from scipy.stats import wasserstein_distance
 

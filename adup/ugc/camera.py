@@ -6,7 +6,7 @@ window, translation, roll) of the working frame. Motion therefore always comes f
 
 Shake is band-limited noise with a ~1/f spectrum in 0.5-6 Hz (physiological hand tremor sits at 1-3.5 Hz; walking adds
 ~2 Hz bob), drift is a slow random walk, and a push-in is a smooth zoom ramp. Amplitudes are sampled so that the
-measured shake_rms / pan_speed / zoom_rate (adup.analysis.ugc_look) match real TikTok / Meta ads; see configs/ugc.
+measured shake_rms / pan_speed / zoom_rate (adup.analysis.ugc_look) match real TikTok / Meta ads; ranges in configs/pairs/<version>.yaml.
 """
 
 import cv2

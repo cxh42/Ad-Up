@@ -2,9 +2,9 @@
 #
 # 一个文件管一个数据集版本的全部参数，按流程分三段：
 #   gt       GT 选取：预筛门槛、单片段模式的画幅
-#   ugc      把高质量素材做成"像真实 UGC 广告"的 GT：编排、虚拟手持相机、手机色彩、烧录文字（GT 和 LQ 都有）
+#   ugc      把高质量素材做成"像真实 UGC 广告"的 GT：编排、虚拟手持相机、烧录文字（GT 和 LQ 都有）
 #   degrade  GT -> LQ：Real-ESRGAN / RealBasicVSR 式二阶退化（adup/degrade/second_order.py）
-# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director、gt.portrait_min_short）、adup.hq.gate（gt）。
+# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director）、adup.hq.gate（gt）。
 # 每条配对的 meta.json 记录实际抽到的参数；数据集目录下的 config.yaml 是生成时用的这份。
 # 临时改参数不用复制文件：--set degrade.tail_prob=0.3
 #
@@ -14,15 +14,13 @@
 #   v6     以 Meta 为主的画幅（未生成数据）
 #   v7     目标改为 1080p 输出：GT 1920x1080 / 1080x1920，横竖各半；LQ 360/540/720。
 #          退化换成二阶流程（导师要求按 Real-ESRGAN / RealBasicVSR 的标准设计），编码器只用 H.264 和 VP9；
-#          手机色彩先关闭（成品偏艳偏暖，proposal 里也没有）；按源视频划分 train / dev / test
+#          去掉手机色彩（成品偏艳偏暖，proposal 里也没有）；按源视频划分 train / dev / test
 
 version: v7
 
 gt:
   # 单片段模式（make_pairs --manifest）的 GT 画幅；director 编排的广告在 ugc.director.aspects 里选
   aspects: {"9:16": 0.5, "16:9": 0.5}
-  # 9:16 在 --gt-short 下裁不出来时，用素材能裁出的最大竖屏（短边不低于此值）；1080p 目标下 4K 横屏够用，设为 null
-  portrait_min_short: null
   # 预筛：在 GT 分辨率下测 3 帧
   min_detail: 12.0              # 拉普拉斯方差下限（太平、太虚的画面不要）
   luma_range: [30, 230]         # 平均亮度范围（过暗、过曝不要）
@@ -63,23 +61,6 @@ ugc:
     base_zoom: [1.0, 1.0]
     roll_per_pct: 0.15
   still_camera: {shake_prob: 0.5, drift_prob: 0.8, push_prob: 0.8, push_zoom: [1.05, 1.2]}   # 照片镜头覆盖 camera 的这几项
-  look:
-    # 手机色彩：v7 关闭（look_prob 0）。成品复核发现偏艳偏暖（目标统计与素材内容无关），改好前不用
-    look_prob: 0.0
-    m_exposure: [0.75, 1.5]
-    m_white: [0.78, 1.0]
-    m_shadow_lift: [0.0, 0.1]
-    m_saturation: [0.7, 2.0]
-    m_warmth: [-0.06, 0.1]
-    contrast: [-0.05, 0.12]
-    tint: [-0.01, 0.02]
-    exposure: [1.03, 1.25]
-    shadow_lift: [0.0, 0.05]
-    highlight_rolloff: [0.5, 1.0]
-    knee: [0.6, 0.75]
-    white: [0.86, 0.98]
-    saturation: [1.1, 1.6]
-    warmth: [-0.01, 0.06]
   text:
     # 烧录文字（OCR 实测：约 95% 的真实广告几乎每帧都有字）；逐帧的文字 mask 存为 mask.mkv
     text_prob: 0.95

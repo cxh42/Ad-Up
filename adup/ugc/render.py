@@ -114,7 +114,7 @@ class ShotRenderer:
         if img.shape[0] < self.bh:
             img = np.pad(img, ((0, self.bh - img.shape[0]), (0, 0), (0, 0)), mode="edge")
         self.page = img
-        room, r, y, ys, t = img.shape[0] - self.bh, self.rng, 0.0, [], 0
+        room, r, y, ys = img.shape[0] - self.bh, self.rng, 0.0, []
         while len(ys) < self.n:                                  # pause, then an ease-out swipe
             ys += [y] * int(r.uniform(0.3, 1.2) * self.fps)
             dist = r.uniform(0.3, 0.9) * self.bh * (1 if r.random() < 0.85 or y <= 0 else -0.5)
@@ -216,7 +216,7 @@ class ShotRenderer:
 
     @property
     def camera_captured(self):
-        """False for digital content (screen recordings, text slides): no phone look, no camera / ISP degradations."""
+        """False for digital content (screen recordings, text slides): no camera motion blur."""
         if self.kind == "layout":
             return all(p.camera_captured for p in self.parts)
         return self.kind in ("video", "still")

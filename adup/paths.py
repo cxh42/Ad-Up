@@ -31,7 +31,7 @@ REAL_STATS = STATS / "real_ads"       # measured on real ads (adup.analysis.*): 
 HQ_STATS = STATS / "hq"               # content tags of the HQ pool (adup.analysis.ugc_content)
 BENCHMARK_STATS = STATS / "benchmarks"
 # tables read while making pairs
-LOOK_TABLE = REAL_STATS / "ugc_look.csv"             # per-shot shake / colour / faces of real ads -> camera and look targets
+LOOK_TABLE = REAL_STATS / "ugc_look.csv"             # per-shot shake / colour / faces of real ads -> camera shake targets
 SHOTS_TABLE = REAL_STATS / "shots.csv"               # shot lengths of real ads -> the director's cut rhythm
 COVERAGE_TABLE = HQ_STATS / "content_coverage.csv"   # theme shares of real ads vs HQ pool -> theme-balanced sampling
 POOL_TABLE = HQ_STATS / "content_pool.csv"           # UltraVideo catalogue themes (from text descriptions)

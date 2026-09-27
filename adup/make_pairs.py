@@ -10,9 +10,8 @@ Per ad (random parameters are drawn once per LQ variant and held fixed over the 
             2. gate (hq/gate.py) unless the spec's clips were pre-gated
             3. render each shot (ugc/render.py: face-aware crop, virtual handheld camera, layouts, stills, slides,
                screen recordings) and join them with transitions (ugc/sequence.py)
-            4. optional phone colour look (ugc/look.py; off in v7), camera-captured shots only
-            5. burned-in text: captions, hook titles, stickers, fine print (ugc/text.py), and its per-frame mask
-  LQ        6. second-order degradation (degrade/second_order.py): stage 1 (blur, resize, noise, JPEG, H.264 / VP9)
+            4. burned-in text: captions, hook titles, stickers, fine print (ugc/text.py), and its per-frame mask
+  LQ        5. second-order degradation (degrade/second_order.py): stage 1 (blur, resize, noise, JPEG, H.264 / VP9)
                while the GT is rendered, then stage 2 and the final resize / compression from the stage-1 file
 Frame count and fps are preserved end to end, so GT and LQ stay frame-aligned.
 
@@ -41,8 +40,7 @@ import yaml
 from adup.config import add_config_args, load_config
 from adup.degrade.second_order import finish, sample_plan, stage1_writer
 from adup.hq.gate import crop_filter, gate_ok, gate_stats
-from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, max_gt_short, probe, split_at
-from adup.ugc.look import LOOK_STATS, apply_look, match_look, real_look_targets, sample_look, tone_lut
+from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, probe, split_at
 from adup.ugc.render import ShotRenderer
 from adup.ugc.sequence import sequence_frames, shot_ranges
 from adup.ugc.text import draw_mask, draw_text, plan_text
@@ -56,8 +54,6 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
     rng = random.Random(seed)
     nrng = np.random.default_rng(seed)
     deg, ugc = config["degrade"], config["ugc"]
-    gt_short = seq.get("gt_short", gt_short)       # the director reduces it for 9:16 ads cut from 4K landscape clips
-    lq_short = None
     if scale == "auto":                     # real inputs are 540-720p: sample the LQ short side, scale = GT / LQ
         lq_short = int(pick_weighted(rng, {int(k): v for k, v in deg["lq_short"].items()}))
         scale = gt_short / lq_short
@@ -67,17 +63,9 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
     else:
         sizes = [probe(s["src"])[:2] for s in shots]
         aspects = feasible_aspects(sizes, gt_short, scale, config["gt"]["aspects"])
-        portrait_short = None
-        if "9:16" in config["gt"]["aspects"] and "9:16" not in aspects and config["gt"].get("portrait_min_short"):
-            fit = [max_gt_short(sw, sh, "9:16", gt_short, scale, config["gt"]["portrait_min_short"]) for sw, sh in sizes]
-            if all(fit):
-                portrait_short, aspects["9:16"] = min(fit), config["gt"]["aspects"]["9:16"]
         if not aspects:
             raise ValueError(f"no aspect ratio fits GT short side {gt_short} in sources {sizes}")
         aspect = pick_weighted(rng, aspects)
-        if aspect == "9:16" and portrait_short:
-            gt_short = portrait_short
-            scale = gt_short / lq_short if lq_short else scale
     gw, gh, lw, lh = gt_geometry(aspect, gt_short, scale)
     gates = []
     if not seq.get("pregated"):                  # clip-level gate already applied by the director otherwise
@@ -92,23 +80,13 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
                                  ", ".join(f"{k}={v:.1f}" for k, v in stats.items()))
             gates.append(stats)
     renderers = [ShotRenderer(s, gw, gh, fps, nrng, ugc) for s in shots]
-    if "look" in seq:
-        look = seq["look"]
-    elif nrng.random() >= ugc["look"]["look_prob"]:
-        look = None
-    elif (targets := real_look_targets()) is not None:
-        ref = next((r for r in renderers if r.kind != "slide"), renderers[0])
-        look = match_look(ref.preview, dict(zip(LOOK_STATS, targets[nrng.integers(len(targets))])), nrng, ugc["look"])
-    else:
-        look = sample_look(nrng, {**ugc["look"], "look_prob": 1.0})
-    lut = tone_lut(look) if look else None
     ranges = shot_ranges(shots, transitions)
     n = ranges[-1][1]
     items, text_meta = plan_text(n, fps, gw, gh, rng, ugc["text"])
 
     os.makedirs(out_dir, exist_ok=True)
     meta = {"id": seq["id"], "purpose": seq.get("purpose"), "fps": fps, "frames": n, "gt_size": [gw, gh],
-            "lq_size": [lw, lh], "scale": scale, "aspect": aspect, "gate": gates, "look": look,
+            "lq_size": [lw, lh], "scale": scale, "aspect": aspect, "gate": gates,
             "render": [r.info for r in renderers], "text": text_meta, "split": seq.get("split"),
             "config": config, "variants": []}
     with tempfile.TemporaryDirectory(dir=out_dir) as tmp:
@@ -121,8 +99,6 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config):
                   for k, (p, g) in enumerate(zip(plans, nprngs))]
         with ThreadPoolExecutor(max_workers=variants + 1) as pool:      # variants in parallel (cv2 / numpy drop the GIL)
             for i, (f, vel, camera) in enumerate(sequence_frames(shots, transitions, renderers, rng)):
-                if camera and look:                 # screen recordings and text slides are digital: no phone look
-                    f = apply_look(f, look, lut)
                 draw_text(f, i, items)
                 mask = np.zeros((gh, gw), np.uint8)
                 draw_mask(mask, i, items)

@@ -24,7 +24,6 @@ adup/                     代码（Python 包），在仓库根目录用 `python
   real_ads/            ①  采集真实广告（目标 LQ 域，只做统计和评测）            -> data/real_ads/
     tiktok_topads.py      TikTok Creative Center Top Ads
     meta_adlib_web.py     Meta 广告库网页（不需要 token）
-    contact_sheets.py     按行业生成帧缩略图拼图
     splits.py             真实广告按广告 id 分 calibration / dev / test -> data/stats/real_ads/splits.csv
   analysis/            ②  测量：真实广告的统计 -> data/stats/；合成数据的校准 -> outputs/calibration/
     ugc_look.py           逐镜头的"UGC 观感"：手持抖动、平移、景深、色彩、人脸、版式
@@ -45,7 +44,6 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     render.py             渲染单个镜头：视频 / 照片 / 版式（模糊填充、分屏、画中画）/ 幻灯片 / 录屏
     camera.py             虚拟手持相机（抖动、漂移、推拉），只用素材多出来的像素
     sequence.py           镜头之间的转场（硬切、叠化、甩镜、黑场、白场）
-    look.py               手机色彩风格，按真实广告的色彩分布匹配
     text.py、fonts.py     烧录字幕、标题、贴纸、小字（按真实广告 OCR 统计设计）；OFL 开源字体
   degrade/             ⑤  GT -> LQ 的退化
     second_order.py       二阶退化（RealBasicVSR 结构）：两轮 模糊→缩放→噪声→JPEG→H.264/VP9，最后缩到 LQ 尺寸；
@@ -83,7 +81,6 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 # ① 真实广告（目标 LQ 域）
 .venv/bin/python -m adup.real_ads.tiktok_topads
 .venv/bin/python -m adup.real_ads.meta_adlib_web
-.venv/bin/python -m adup.real_ads.contact_sheets data/real_ads/<source>/<date>
 .venv-iqa/bin/python -m adup.real_ads.splits                                         # calibration / dev / test
 
 # ② 测量真实广告 -> data/stats/real_ads/（管线读取的校准目标）

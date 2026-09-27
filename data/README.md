@@ -23,7 +23,7 @@ assets/           字体、人脸检测模型
 | `meta_adlib_web/20260924/` | Meta 广告库视频广告，164 条 |
 
 每个日期目录里：`videos/<行业或关键词>/*.mp4`（Meta 广告库另有 `videos_sd/`，同一条广告的 360p 版本，2026-09-27 起的抓取才有），`summary.csv`（每条广告的元数据和文案，字幕文案也从这里取），
-`sheets/`（帧缩略图拼图），`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
+`sheets/`（早期浏览用的帧缩略图拼图，生成脚本已删除），`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
 
 ## hq/：高质量素材
 
@@ -44,7 +44,7 @@ assets/           字体、人脸检测模型
 
 | 文件 | 内容 | 写入 | 读取 |
 |---|---|---|---|
-| `real_ads/ugc_look.csv` | 真实广告逐镜头的抖动、平移、景深、色彩、人脸 | `analysis/ugc_look.py` | `ugc/look.py`（色彩目标）、`ugc/director.py`（抖动目标） |
+| `real_ads/ugc_look.csv` | 真实广告逐镜头的抖动、平移、景深、色彩、人脸 | `analysis/ugc_look.py` | `ugc/director.py`（手持抖动目标） |
 | `real_ads/shots.csv` | 真实广告的镜头长度（46 条 TikTok） | `analysis/shots.py --table` | `ugc/director.py`（切镜节奏） |
 | `real_ads/content_ads.csv` | 真实广告每 2 秒一帧的内容标签 | `analysis/ugc_content.py ads` | `ugc_content.py coverage` |
 | `real_ads/text_overlay.csv` | 真实广告的画面文字（OCR） | `analysis/text_overlay.py` | 设计字幕样式时参考 |
