@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # ---------------------------------------------------------------- data (not in git)
 DATA = ROOT / "data"
-REAL_ADS = DATA / "real_ads"          # <scraper>/<date>/{videos/, summary.csv, sheets/, shots/}
+REAL_ADS = DATA / "real_ads"          # <scraper>/<date>/{videos/, summary.csv, shots/}
 HQ = DATA / "hq"                      # ultravideo/{4k,8k}/  unsplash_lite/  ui_screens/
 BENCHMARKS = DATA / "benchmarks"      # KwaiVIR/  VideoLQ/
 PAIRS = DATA / "pairs"                # <dataset>/{specs.jsonl, config.yaml, <ad id>/{gt.mp4, lq_<k>.mp4, meta.json, shots/}}

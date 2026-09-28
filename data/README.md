@@ -24,7 +24,7 @@ assets/           字体、人脸检测模型
 | `meta_adlib_web/20260928/` | Meta 广告库视频广告，64 条，720p 和 360p 两个版本都有（跨天重复的广告在 `splits.csv` 里合并） |
 
 每个日期目录里：`videos/<行业或关键词>/*.mp4`（Meta 广告库另有 `videos_sd/`，同一条广告的 360p 版本，2026-09-27 起的抓取才有），`summary.csv`（每条广告的元数据和文案，字幕文案也从这里取），
-`sheets/`（早期浏览用的帧缩略图拼图，生成脚本已删除），`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
+`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
 
 ## hq/：高质量素材
 
@@ -80,15 +80,18 @@ assets/           字体、人脸检测模型
     meta.json                      每一步的参数、镜头边界和来源、所属划分（train / dev / test）
 ```
 
-本机的配对数据只有展示用的小样本（2026-09-28，单进程生成，峰值内存约 3–6 GB）：
+本机的配对数据只有展示用的小样本（2026-09-29，单进程、在 `adup.memguard` 下生成，峰值内存 3–6 GB）：
 
 | 目录 | 内容 |
 |---|---|
-| `data/pairs/ugc_v7_examples/` | 12 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑（两种风格、横竖屏、24 / 25 / 30 fps、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材），退化按训练设置（重退化 10%） |
-| `data/pairs/ugc_v7_examples_heavy/` | 其中 3 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
+| `data/pairs/ugc_v7_examples/` | 36 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑：两种风格、横竖屏、24 / 25 / 30 fps、12 个广告主题、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材；退化按训练设置（72 个 LQ 里 3 个抽到重退化） |
+| `data/pairs/ugc_v7_examples_heavy/` | 其中 9 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
+| `data/pairs/ugc_v7_examples_grid/` | 3 条测试集广告按网格生成：同一 GT 的 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
 | `data/pairs/ugc_v7_{train,dev,test}/specs.jsonl` | 已编排、未生成：训练 1,000 条、开发 50 条、测试 100 条广告，在服务器上生成 |
 
-展示图和 GT / LQ 并排视频在 `outputs/figures/2026-09-28_examples/`。
+展示材料（`adup.analysis.showcase` 生成）在 `outputs/figures/examples/`，打开 `index.html` 可以在一页里看总览图、文字区域对比、
+重退化对比、网格对比和每条广告的 GT / LQ 并排视频。本机跑生成类任务都用 `python -m adup.memguard -- <命令>` 包一层：
+可用内存低于 10 GB 会自动停掉（任务可续跑）。
 
 ## benchmarks/：公开数据集
 

@@ -20,6 +20,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
   config.py               读取数据集参数 configs/pairs/<版本>.yaml；命令行 --set 临时改参数
   media.py                ffmpeg 读写、GT 几何（画幅、裁剪）、人脸检测
   make_pairs.py           生成配对的入口：specs.jsonl -> data/pairs/<数据集>/，串起 ugc/ 和 degrade/ 的各步
+  memguard.py             内存看门狗：本机跑任务时统计峰值内存，可用内存低于阈值（默认 10 GB）就停掉任务
 
   real_ads/            ①  采集真实广告（目标 LQ 域，只做统计和评测）            -> data/real_ads/
     tiktok_topads.py      TikTok Creative Center Top Ads
@@ -35,11 +36,13 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     compare.py            真实与合成的分布距离（校准报告）
     eval_pairs.py         复原结果对 GT 的 PSNR / LPIPS，区分切换附近和其他帧
     calib_final.py        用 Meta 同一条广告的 720p / 360p 校准退化的最后一步（缩小 + 编码）
+    showcase.py           展示用：配对样例的总览图、文字区域对比、重退化对比、网格对比、并排视频和本地网页
   hq/                  ③  高质量素材（≥1080p 且真实清晰）                        -> data/hq/
     ultravideo.py         UltraVideo 4K/8K 片段，从远程 zip 中逐条取出
     ui_screens.py         合成手机 App 界面长截图（无头 Chrome，4 倍 / 6 倍像素），做录屏镜头的 GT
     kwaivir.py            KwaiVIR 训练集的 200 条高质量竖屏短视频（原生 1080×1920）做成素材清单
     gate.py               GT 预筛：曝光、纹理、在 GT 分辨率下的有效分辨率，并测素材自身运动
+    source_text.py        标出本身带字幕 / 水印的素材，编排时不再给它们加字幕
   ugc/                 ④  把高质量素材做成"像真实 UGC 广告"的 GT
     director.py           编排：每条素材编成一条广告（镜头切分、跳剪、放大、版式、照片、录屏、开场卡片）
                           -> data/pairs/<数据集>/specs.jsonl
