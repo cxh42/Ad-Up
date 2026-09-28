@@ -222,6 +222,7 @@ def main():
                     help="do not write shots/ (boundaries stay in meta.json); saves most of the space for training sets")
     ap.add_argument("--max-frames", type=int, default=150, help="--manifest only: frames per clip")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--shard", default="0/1", help="i/n: only specs with index %% n == i, to run n processes side by side")
     ap.add_argument("--seed", type=int, default=0)
     add_config_args(ap)
     args = ap.parse_args()
@@ -235,7 +236,10 @@ def main():
     specs = clip_specs(args.manifest, args.max_frames) if args.manifest else [json.loads(l) for l in open(args.sequences)]
     if args.limit:
         specs = specs[:args.limit]
+    shard, n_shards = map(int, args.shard.split("/"))
     for i, seq in enumerate(specs):
+        if i % n_shards != shard:
+            continue
         out_dir = os.path.join(out, seq["id"])
         if os.path.exists(os.path.join(out_dir, "meta.json")):
             continue

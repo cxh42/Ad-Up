@@ -6,7 +6,8 @@ EasyOCR's text detector alone (CRAFT, language-independent) on a few frames per 
 boxes cover at least --min-area of the frame on at least two thirds of the sampled frames. Large scene text (signs,
 product labels) can count too; that only makes the director more conservative.
 
-Usage (from the repo root): .venv-iqa/bin/python -m adup.hq.source_text data/hq/kwaivir/manifest.csv [--frames 3]
+Usage (from the repo root): .venv-iqa/bin/python -m adup.hq.source_text data/hq/kwaivir/manifest.csv [--frames 3] \
+    [--gate data/hq/kwaivir/gate_1080.csv]
 Output: source_text.csv next to the manifest (file, frames, frames_with_text, text_area, has_text); the director reads
 it with --source-text.
 """
@@ -27,12 +28,16 @@ def main():
     ap.add_argument("manifest")
     ap.add_argument("--frames", type=int, default=3)
     ap.add_argument("--min-area", type=float, default=0.003, help="text box area / frame area for a frame to count")
+    ap.add_argument("--gate", help="gate CSV (adup.hq.gate): only check clips that pass it")
     args = ap.parse_args()
     reader = easyocr.Reader(["en"], gpu=torch.cuda.is_available(), verbose=False)
     out = os.path.join(os.path.dirname(args.manifest), "source_text.csv")
     done = pd.read_csv(out) if os.path.exists(out) else pd.DataFrame(columns=["file"])
     rows = done.to_dict("records")
     files = [f for f in pd.read_csv(args.manifest).file if f not in set(done.file)]
+    if args.gate:
+        g = pd.read_csv(args.gate)
+        files = [f for f in files if f in set(g.file[g["pass"]])]
     for i, f in enumerate(files):
         w, h, _, nb = probe(f)
         s = 720 / min(w, h)

@@ -153,11 +153,11 @@ TikTok 下方约 17–25%、右侧约 11–13%（[TikTok 安全区](https://tika
 | 裁剪 | 有人脸时脸放在水平中线、画面上 1/3（自拍构图）；没有人脸时选纹理最多的位置。v7 的 1080p 目标下，竖屏从 4K 横屏裁 1215×2160 再缩到 1080×1920，不放大 | YuNet 人脸检测 |
 | 虚拟手持相机 `ugc/camera.py` | 0.5–6 Hz 的 1/f 带限抖动、滚转、走路上下晃动（约 2 Hz）、慢漂移、缓推缓拉。所有运动都来自素材多出来的像素（工作分辨率 ≤ 余量），余量不够时自动减小幅度 | 从真实广告的抖动分布抽目标值，只补"目标² − 素材自身²"的差额；计划幅度和测量值的换算系数为 1.07（在静图上标定） |
 | 手机色彩（已删除） | v5 有过：按真实广告的色彩统计调白平衡、曝光、饱和度 | 成品复核发现偏艳偏暖（目标与素材内容无关），proposal 里也没有，v7 删除；需要时从 git 历史（commit 438b7bf 之前）找回 |
-| 选素材 `ugc/director.py --n-ads` | 按"主题在真实广告中的占比 ÷ 素材池中该主题的数量"加权抽取，每条素材最多用 3 次 | 主题：CLIP 直接看片段中间帧（含"风景、古董、废墟"等非广告类别），文字描述只作后备 |
+| 选素材 `ugc/director.py --n-ads` | 按"主题在真实广告中的占比 ÷ 素材池中该主题的数量"加权抽取。素材只有约 5 秒，多用几次就是同一批像素，所以一条素材最多做 2 条广告的主素材，在整个数据集里（含作为别的广告的 B-roll、分屏、拼图、画中画）最多出现 3 次（`--max-per-clip 2 --max-uses 3`）| 主题：CLIP 直接看片段中间帧（含"风景、古董、废墟"等非广告类别），文字描述只作后备 |
 | 风格 `ugc/director.py` | 每条广告先抽风格：创作者 70%、品牌 30%（1.3 节；游戏 / AI 画面没有素材，不做）。创作者：按真实分布补手持抖动，同一场景内 70% 跳剪，55% 多场景；品牌：85% 不加抖动（稳定器 / 三脚架），叠化更多，70% 多场景，40% 插一个动效卡片，45% 有结尾卡片 | 1.3 节的逐风格出现率 |
 | 场景 `ugc/director.py` | 多场景时加 1–3 条素材：创作者风格 70% 用同一源视频的其他片段（同一创作者、同一场地，相当于口播 + B-roll），否则用同主题的其他素材；每 1–3 个镜头换一次场景 | 真实广告 58% 有 3 个以上场景 |
 | 编排 `ugc/director.py` | 画幅横竖各半。帧率 30 / 24 / 25 fps = 79 / 14 / 7%。按真实镜头长度切分，交替普通构图和放大 1.12–1.3 倍；开场大字卡片、中间动效卡片、结尾卡片按风格抽；15% 插同主题照片；5% 画中画反应；3% 的竖屏广告插一个 2×2 拼图；5% 的竖屏广告插入录屏（科技 / App 类 20%），做成全屏、"录屏 + 人脸小窗"或手机外框 | 帧率：248 条真实广告实测；录屏约占画面 3% |
-| 卡片 `ugc/render.py` | 动效设计：品牌色纯色 / 渐变底，产品照片裁成圆形、圆角矩形或通栏（带阴影，缩放淡入），标题、logo、CTA 按钮、小字依次动画进场；结尾卡片以 logo 为主。卡片上的文字和其他叠加文字走同一条管线，进 mask.mkv 和 meta.json | 真实广告的品牌卡片、结尾卡片 |
+| 卡片 `ugc/render.py` | 动效设计：品牌色纯色 / 渐变底，产品照片裁成圆形、圆角矩形或通栏（带阴影，缩放淡入；横屏左图右文），标题、logo、CTA 按钮、小字依次动画进场；结尾卡片以 logo 为主。中间卡片 1.2–2.5 秒、不超过全片三分之一；卡片合计超过全片 40% 的编排丢弃重编（素材太短时会出现）。卡片上的文字和其他叠加文字走同一条管线，进 mask.mkv 和 meta.json | 真实广告的品牌卡片、结尾卡片 |
 | 版式 `ugc/render.py` | 模糊填充、黑边 / 纯色边（letterbox）、上下分屏、2×2 拼图、画中画、左右合拍、手机外框录屏 | 9:16 广告用横屏素材时 8% 做成竖屏版式（模糊填充 50%、纯色边 20%、分屏 30%） |
 | 文字 `ugc/text.py` | 按风格抽：字幕、标题（静态或逐镜头换句）、TikTok 原生小字、价格 / 优惠码、品牌 logo（虚构品牌名）、CTA 按钮、贴纸、小字免责声明、箭头圈注。文案用同主题真实广告的文案。标题太长时自动缩小字号，最多 3 行。每个元素从自己的位置分布里取第一个不和已有元素重叠的位置 | 1.3 节的逐风格出现率和文字几何 |
 | 素材自带文字 `hq/source_text.py` | 用文字检测（与语言无关）标出本身带字幕的素材（KwaiVIR 多为快手上传，带中文字幕）；用到这类素材的广告不再加字幕、标题和原生小字，只加 logo、CTA、价格、小字、圈注 | 避免两层字幕重叠 |
@@ -182,10 +182,10 @@ GT 1080p --第一阶段--> --第二阶段--> --最后一步--> LQ 360 / 540 / 72
 - **编码器**：只用 H.264（libx264）和 VP9（libvpx-vp9），按导师意见去掉 HEVC、AV1；最终用哪些等 Meta 回复。
   码率用每像素比特（bpp）表示，这样在任何帧尺寸下含义相同；RealBasicVSR 的 1e4–1e5 bit/帧（256 px 裁块）约等于 0.15–1.5 bpp。
 - **两套参数**：`rbvsr`（RealBasicVSR 原版范围，从轻微到"看不清"都有）和 `calibrated`（按真实 Meta 360p / 720p 校准的日常退化，第 6.1 节）。
-  **训练集 100% 用 `rbvsr`**：Real-ESRGAN、RealBasicVSR 和 DOVE（`finetune/configs/degradation.yaml`）都没有单独的"重退化比例"，
-  全部训练样本都从这一套宽范围里随机抽，我们照做（`rbvsr_prob = 1.0`）；这也符合导师 9/26 说的"退化不够重、要有看不清的"。
-  `calibrated` 用于 dev / test 主测试集，使合成测试集像真实广告；训练时混入 `calibrated` 作为消融（如 `--set degrade.rbvsr_prob=0.2`），
-  用真实广告赛道（尤其 Meta 360p→720p 半配对）决定哪种更好。
+  **训练集的比例**：每个 LQ 版本以 `rbvsr_prob` 的概率用 `rbvsr`（重退化），否则用 `calibrated`；先定 **10%**（2026-09-28）。
+  参考工作（Real-ESRGAN、RealBasicVSR、DOVE 的 `finetune/configs/degradation.yaml`）没有单独的重退化比例，全部样本都从 `rbvsr`
+  这一套宽范围里抽，相当于 `rbvsr_prob = 1.0`，作为消融（`--set degrade.rbvsr_prob=1.0`），用真实广告赛道（尤其 Meta 360p→720p
+  半配对）比较哪种更好。`calibrated` 同时用于 dev / test 主测试集，使合成测试集像真实广告。
 - **UGC 额外项**（只在 `calibrated` 的第一阶段）：沿虚拟相机速度的运动模糊、手机 ISP 式锐化（v5 校准时发现真实广告有明显锐化光晕）。
 - **LQ 尺寸**：`--scale auto` 时短边在 360 / 540 / 720 中等概率抽取。
 
@@ -202,8 +202,15 @@ GT 1080p --第一阶段--> --第二阶段--> --最后一步--> LQ 360 / 540 / 72
 - `shots/shot_XXX_{gt,lq_k}.mp4`：多镜头时的逐镜头版本，逐帧精确、无损；
 - `meta.json`：所属划分（split），规格、画幅、GT / LQ 尺寸，每个镜头的渲染信息（裁剪、放置方式、相机参数、版式），色彩参数和目标，文字元素的位置和帧范围，每个变体的退化参数，镜头边界和来源。
 
-本机目前没有配对数据：v5 及更早的配对已于 2026-09-28 删除；v7 的本机小样本测试放在临时目录，统计结果在 `outputs/calibration/`。
-训练集和 dev / test 在服务器上生成（第 7 节）。
+本机的配对数据只有展示用的小样本（2026-09-28，单进程生成，峰值内存约 3–6 GB）：
+
+| 目录 | 内容 |
+|---|---|
+| `data/pairs/ugc_v7_examples/` | 12 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑（两种风格、横竖屏、24 / 25 / 30 fps、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材），退化按训练设置（重退化 10%） |
+| `data/pairs/ugc_v7_examples_heavy/` | 其中 3 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
+| `data/pairs/ugc_v7_{train,dev,test}/specs.jsonl` | 已编排、未生成：训练 1,000 条、开发 50 条、测试 100 条广告，在服务器上生成 |
+
+展示图和 GT / LQ 并排视频在 `outputs/figures/2026-09-28_examples/`。
 
 ## 6. 校准
 
@@ -236,7 +243,7 @@ Meta 广告库里同一条广告有 720p 和 360p 两个版本，都是 Meta 从
 - **360p**：块效应、噪声、有效分辨率对上。锐化光晕偏高（8.4 vs 6.7），但干净对照同样偏高（8.36），差距来自内容（锐利的文字边缘直接缩小），
   不是退化；感知分数略偏干净（CLIP-IQA 0.43 vs 0.39）。真实 360p 只有 18 条，等服务器上抓更多再调，避免过拟合。
 - 码率一栏的 W/IQR 没有意义：20% 的 LQ 最后一步是"先编码再缩小"，存成了无损文件。中位数接近（720p 0.041 vs 0.058，360p 0.057 vs 0.063）。
-- 重退化的比例：照参考工作，训练集全部用 `rbvsr`（第 4 节），不另设比例。
+- 重退化的比例：训练集先定 10% 用 `rbvsr`（第 4 节），全部用 `rbvsr`（参考工作的做法）作为消融。
 
 ### 6.2 v5 的校准（2026-09-24，30 条广告 × 2 个 LQ，本机小样本；已被 v7 取代）
 
@@ -328,17 +335,25 @@ Meta 广告库里同一条广告有 720p 和 360p 两个版本，都是 Meta 从
 python -m adup.hq.ultravideo 300 --per-source 4 --kind both            # 4K -> data/hq/ultravideo/4k/
 python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K -> data/hq/ultravideo/8k/
 python -m adup.hq.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
-# 预筛（GT 1080p）
+# 预筛（GT 1080p；可以把清单拆成几份并行跑，脚本支持断点续跑）
 python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --out data/hq/ultravideo/4k/gate_1080.csv
 python -m adup.hq.gate --manifest data/hq/ultravideo/8k/manifest.csv --out data/hq/ultravideo/8k/gate_1080.csv
+# 素材自带文字（用到这类素材的广告不再加字幕）
+python -m adup.hq.source_text data/hq/ultravideo/4k/manifest.csv --gate data/hq/ultravideo/4k/gate_1080.csv
 # 按画面给素材打主题（CLIP，每条一帧）
 python -m adup.analysis.ugc_content clips data/stats/hq/content_clips.csv data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv
-# 编排（按真实广告主题占比抽素材）+ 生成
-python -m adup.ugc.director --clips data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv \
-    --gate data/hq/ultravideo/4k/gate_1080.csv data/hq/ultravideo/8k/gate_1080.csv \
-    --stills data/stats/hq/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
-    --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
-python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto --variants 2
+# 编排：train / dev / test 分开编排（按源视频划分，合成前就分好），按真实广告主题占比抽素材
+M="data/hq/ultravideo/4k data/hq/ultravideo/8k data/hq/kwaivir"
+for sp in "train 5000" "dev 50" "test 100"; do set -- $sp
+  python -m adup.ugc.director --clips $(for d in $M; do echo $d/manifest.csv; done) \
+      --gate $(for d in $M; do echo $d/gate_1080.csv; done) --source-text $(for d in $M; do echo $d/source_text.csv; done) \
+      --stills data/stats/hq/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
+      --only-split $1 --n-ads $2 --out data/pairs/ugc_v7_$1/specs.jsonl
+done
+# 生成：训练集每条 2 个 LQ（10% 重退化）；dev / test 走网格（4 种尺寸 × 2 种编码，校准版退化）。--shard i/n 可以并行跑 n 个进程
+python -m adup.make_pairs --sequences data/pairs/ugc_v7_train/specs.jsonl --scale auto --variants 2 --no-shot-files --shard 0/8
+python -m adup.make_pairs --sequences data/pairs/ugc_v7_dev/specs.jsonl --grid --no-shot-files
+python -m adup.make_pairs --sequences data/pairs/ugc_v7_test/specs.jsonl --grid --no-shot-files
 ```
 
 ## 8. 已知不足
@@ -353,4 +368,6 @@ python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
 - **LQ 该模拟哪一环还没定**：见 `docs/ugc_degradations.md` 1.1。模型若放在 Meta 入库端，输入是广告主上传的原片，现在的退化链多算了一代 Meta 平台转码。
 - **文案和画面只在主题上对应**：字幕、标题用同主题真实广告的文案，但不描述画面里的具体东西。对超分训练影响不大，文字主要作为纹理。
 - **广告构成里还没做的**（1.3 节）：CG / 游戏 / AI 生成画面（占真实广告 23%，缺素材）、绿幕抠像（6%，需要人像分割）、手持手机拍屏幕（现在是平面手机外框）。口播和手部演示的比例受素材限制：UltraVideo 很少有人对镜头说话。
+- **品牌风格实际偏少**：配置里品牌占 30%，但卡片过多的编排会被丢弃，而品牌广告卡片多，实际编排出来约 27%（训练集）。
+- **画幅不是正好对半**：KwaiVIR 只有竖屏素材，训练集编排出来竖 / 横约 64 / 36。
 - **1.3 节的标注只有 48 条、一个人标**：比例误差约 ±7%；服务器上可以用视觉语言模型把其余真实广告也标一遍。

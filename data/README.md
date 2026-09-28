@@ -38,8 +38,8 @@ assets/           字体、人脸检测模型
 | `kwaivir/` | 只有 `manifest.csv` 和 `gate_1080.csv`：指向 `benchmarks/KwaiVIR/train/synthetic/HQ-synthetic*/` 的 200 条原生竖屏 1080×1920 短视频，类别来自快手标签 | NTIRE 2026 比赛数据，仅限研究 |
 
 每个视频目录里有 `manifest.csv`（素材清单，下载脚本写入）和 `gate_<GT 短边>.csv`（预筛结果，`adup/hq/gate.py`
-写入）。v7 用 `gate_1080.csv`：KwaiVIR 已跑（190 / 200 通过）；UltraVideo 4K / 8K 留给服务器。
-`source_text.csv`（`adup/hq/source_text.py`）标出本身带字幕的片段，编排时用 `--source-text` 读入：KwaiVIR 已跑，UltraVideo 留给服务器。
+写入）。v7 用 `gate_1080.csv`：都已跑完，KwaiVIR 190 / 200、UltraVideo 4K 541 / 719、8K 170 / 228 通过（任一方向）。
+`source_text.csv`（`adup/hq/source_text.py`）标出本身带字幕的片段，编排时用 `--source-text` 读入：都已跑完：KwaiVIR 103 / 200、UltraVideo 4K 108 / 541、8K 22 / 170 带字（只查通过预筛的）。
 
 ## stats/：测量表
 
@@ -80,8 +80,15 @@ assets/           字体、人脸检测模型
     meta.json                      每一步的参数、镜头边界和来源、所属划分（train / dev / test）
 ```
 
-本机目前没有配对数据：v5 及更早的配对已于 2026-09-28 删除（需要时按 git 历史重新生成）；v7 的本机小样本测试只放在临时目录，
-统计结果在 `outputs/calibration/`。正式的训练集和 dev / test 在服务器上生成。
+本机的配对数据只有展示用的小样本（2026-09-28，单进程生成，峰值内存约 3–6 GB）：
+
+| 目录 | 内容 |
+|---|---|
+| `data/pairs/ugc_v7_examples/` | 12 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑（两种风格、横竖屏、24 / 25 / 30 fps、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材），退化按训练设置（重退化 10%） |
+| `data/pairs/ugc_v7_examples_heavy/` | 其中 3 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
+| `data/pairs/ugc_v7_{train,dev,test}/specs.jsonl` | 已编排、未生成：训练 1,000 条、开发 50 条、测试 100 条广告，在服务器上生成 |
+
+展示图和 GT / LQ 并排视频在 `outputs/figures/2026-09-28_examples/`。
 
 ## benchmarks/：公开数据集
 

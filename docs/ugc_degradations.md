@@ -216,7 +216,7 @@ Real-ESRGAN / RealBasicVSR 式的二阶流程；下文第 4 节梳理的真实�
 | GT（`hq/gate.py`，`gt`） | 输出 1920×1080 / 1080×1920，横竖各半，只缩小不放大。门槛：曝光、纹理、有效分辨率（×2 下采样再上采样 PSNR ≤ 38 dB）。 | 素材自带水印的过滤 |
 | UGC 化（`ugc/`，`ugc`） | 编排：按真实镜头长度切分、跳剪、放大、转场（第 3 节）。人脸感知裁剪、虚拟手持相机、版式（模糊填充、分屏、画中画）、照片镜头、App 录屏、开场和结尾大字卡片。手机色彩 v7 关闭。详见 `docs/ugc_dataset.md` 第 3 节。 | 绿幕合成、游戏画面、变速帧混合 |
 | 文字（`ugc/text.py`，`ugc.text`） | 95% 的片段有文字。①滚动字幕（85%）：细体白字、圆角底板、粗体大写加当前词高亮、卡拉 OK 底板 4 种样式，逐词或逐短语出现，带弹出和淡入动画，12% 的字幕带 emoji。②开头标题（50%）：无衬线、粗体、衬线、手写、打字机字体，用底板、描边、阴影或发光。③贴纸（45%）：价格、折扣、CTA、#ad、评分、emoji，可旋转。④小字免责声明（20%）。字体是 30 多种 OFL 开源字体，包括 TikTok 自己的 TikTok Sans；文案来自抓到的真实广告文案。每个文字元素的位置和帧范围都写进 meta.json，逐帧 alpha 存为 mask.mkv。 | |
-| 退化（`degrade/second_order.py`，`degrade`） | 两轮"模糊（高斯 / 各向异性 / 广义高斯 / plateau / sinc 核）→ 缩放 → 高斯或泊松噪声 → JPEG"，第一轮末尾 H.264 或 VP9 编码，最后在"编码"和"缩到 LQ 尺寸 + sinc"之间随机先后。参数每个版本抽一次、整段固定，噪声逐帧。`rbvsr`（RealBasicVSR 原版，训练默认）和 `calibrated`（按真实广告校准，dev / test 用）两套。`calibrated` 第一轮加沿相机速度的运动模糊和 ISP 式锐化。LQ 短边 360 / 540 / 720。 | AV1 / HEVC（等 Meta 回复）、果冻效应、曝光闪烁、水印 |
+| 退化（`degrade/second_order.py`，`degrade`） | 两轮"模糊（高斯 / 各向异性 / 广义高斯 / plateau / sinc 核）→ 缩放 → 高斯或泊松噪声 → JPEG"，第一轮末尾 H.264 或 VP9 编码，最后在"编码"和"缩到 LQ 尺寸 + sinc"之间随机先后。参数每个版本抽一次、整段固定，噪声逐帧。`rbvsr`（RealBasicVSR 原版，重退化，训练集 10%）和 `calibrated`（按真实广告校准，训练集 90%，dev / test 用）两套。`calibrated` 第一轮加沿相机速度的运动模糊和 ISP 式锐化。LQ 短边 360 / 540 / 720。 | AV1 / HEVC（等 Meta 回复）、果冻效应、曝光闪烁、水印 |
 | 真实 LQ | Meta 广告库的 720p（HD）和 360p（SD）文件、TikTok 的 576–720p 文件，按广告 id 分 calibration / dev / test（`real_ads/splits.py`）。 | Instagram / YouTube 的其他档位 |
 
 刻意不做的退化：

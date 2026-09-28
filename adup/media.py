@@ -13,6 +13,12 @@ from adup.paths import FACE_MODEL
 ASPECTS = {"9:16": 16 / 9, "4:5": 5 / 4, "1:1": 1.0, "16:9": 9 / 16}
 LOSSLESS_H264 = ["-c:v", "libx264", "-preset", "veryfast", "-qp", "0"]
 GT_H264 = ["-c:v", "libx264", "-preset", "medium", "-crf", "10"]
+# Threads per ffmpeg decoder / encoder / filter graph. By default x264 and the decoders scale their frame threads with the
+# core count (~48 on a 32-core machine), which costs over 1 GB per 1080p encoder and 2.4 GB per 8K decoder; pair
+# generation runs many of them side by side (2-8 LQ encoders per ad, several processes), so each gets a few threads.
+THREADS = 4
+FF = ["ffmpeg", "-v", "error", "-filter_threads", str(THREADS), "-threads", str(THREADS)]     # "-threads" here: decoder
+ENC = ["-threads", str(THREADS)]                                                                # after "-i": encoder
 
 
 def probe(path):
@@ -25,7 +31,7 @@ def probe(path):
 
 
 def read_frames(path, vf, w, h, max_frames):
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vf", vf, "-frames:v", str(max_frames), "-fps_mode", "passthrough",
+    cmd = [*FF, "-i", path, "-vf", vf, "-frames:v", str(max_frames), "-fps_mode", "passthrough",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     raw = subprocess.run(cmd, capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.uint8).reshape(-1, h, w, 3)
@@ -33,7 +39,7 @@ def read_frames(path, vf, w, h, max_frames):
 
 def stream_frames(path, vf, w, h, n):
     """Yield exactly n frames (the last one is repeated if the source runs short)."""
-    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", path, "-vf", vf, "-frames:v", str(n), "-fps_mode", "passthrough",
+    p = subprocess.Popen([*FF, "-i", path, "-vf", vf, "-frames:v", str(n), "-fps_mode", "passthrough",
                           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, bufsize=w * h * 3)
     size, count, last = w * h * 3, 0, None
     while count < n:
@@ -54,8 +60,8 @@ class Writer:
     """Pipe RGB frames into an ffmpeg encoder."""
 
     def __init__(self, path, w, h, fps, codec_args, pix_fmt="yuv420p", in_fmt="rgb24"):
-        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", in_fmt,
-                                   "-s", f"{w}x{h}", "-r", f"{fps}", "-i", "-", *codec_args, "-pix_fmt", pix_fmt,
+        self.p = subprocess.Popen([*FF, "-y", "-f", "rawvideo", "-pix_fmt", in_fmt,
+                                   "-s", f"{w}x{h}", "-r", f"{fps}", "-i", "-", *codec_args, *ENC, "-pix_fmt", pix_fmt,
                                    "-fps_mode", "passthrough", path], stdin=subprocess.PIPE)
         self.path = path
 
@@ -69,7 +75,7 @@ class Writer:
 
 
 def transcode(src, dst, vf, codec_args):
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", src, "-vf", vf, *codec_args,
+    cmd = [*FF, "-y", "-i", src, "-vf", vf, *codec_args, *ENC,
            "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-an", dst]
     subprocess.run(cmd, check=True)
 
@@ -77,11 +83,11 @@ def transcode(src, dst, vf, codec_args):
 def split_at(src, pattern, cuts):
     """Split src at frame indices `cuts` into pattern % i files, frame-exact and lossless, in one pass."""
     if not cuts:
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, *LOSSLESS_H264, "-pix_fmt", "yuv420p",
+        subprocess.run([*FF, "-y", "-i", src, *LOSSLESS_H264, *ENC, "-pix_fmt", "yuv420p",
                         "-fps_mode", "passthrough", "-an", pattern % 0], check=True)
         return
     keys = "+".join(f"eq(n,{c})" for c in cuts)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, *LOSSLESS_H264, "-pix_fmt", "yuv420p",
+    subprocess.run([*FF, "-y", "-i", src, *LOSSLESS_H264, *ENC, "-pix_fmt", "yuv420p",
                     "-force_key_frames", f"expr:{keys}", "-fps_mode", "passthrough", "-an", "-f", "segment",
                     "-segment_frames", ",".join(map(str, cuts)), "-reset_timestamps", "1", pattern], check=True)
 

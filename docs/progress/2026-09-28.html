@@ -105,7 +105,7 @@ footer { margin-top: 60px; padding-top: 16px; border-top: 1px solid var(--line);
 <tr><td>输出 1080p，输入是 360p 这类小分辨率</td><td>GT 1920×1080 / 1080×1920；LQ 短边 360 / 540 / 720 等概率；DOVE 推理改成可指定任意输出尺寸（×1.5 也能跑）</td></tr>
 <tr><td>横竖屏对半</td><td>训练数据横竖各半；真实测试集保持真实比例（93–100% 竖屏）</td></tr>
 <tr><td>退化按 Real-ESRGAN / RealBasicVSR 的设计来，不要乱搭</td><td>两轮"模糊 → 缩放 → 噪声 → JPEG"，第一轮末尾视频编码，最后在"编码"和"缩到目标尺寸 + sinc"之间随机先后；
-参数分两套：rbvsr（RealBasicVSR 原版范围，从轻微到"看不清"都有）和 calibrated（按真实广告校准）。训练集照 Real-ESRGAN / RealBasicVSR / DOVE 的做法全部用 rbvsr——三者都没有单独的重退化比例，全部样本从这一套宽范围里随机抽；calibrated 用于 dev / test 主测试集和训练消融</td></tr>
+参数分两套：rbvsr（RealBasicVSR 原版范围，从轻微到"看不清"都有）和 calibrated（按真实广告校准）。训练集先定 10% 用 rbvsr（重退化）、90% 用 calibrated；参考工作的做法（全部用 rbvsr，三者都没有单独的重退化比例）作为消融；calibrated 也用于 dev / test 主测试集</td></tr>
 <tr><td>编码器每次随机挑一个，先用 H.264 和 VP9</td><td>每次编码在两者中随机选；HEVC、AV1 先去掉，等 Meta 回复</td></tr>
 <tr><td>用真实视频校准，找真实低清视频</td><td>重新抓了 Meta 广告，同一条广告同时存 360p 和 720p；真实广告按 id 分成 校准 30% / 开发 20% / 测试 50%，测试集不参与调参</td></tr>
 </table></div>
@@ -184,7 +184,7 @@ DOVE 的帧间闪烁也最大，并出现少量文字幻觉。这些正是微调
 <ul>
 <li>服务器：下载素材（UltraVideo 全池、OpenVidHD 按主题挑选）、按 1080p 预筛、生成训练集（约 4,000 条广告 × 2 个 LQ）和 dev / test（50 / 100 条，网格）；</li>
 <li>基准：接入 BasicVSR++、RealBasicVSR、iVSR、SeedVR2、FlashVSR 等，跑完整基准；加人脸和商品保真、再转码后的质量；</li>
-<li>校准：服务器上抓更多真实 360p 广告复核；训练消融：全部 rbvsr vs 混入 calibrated（如 calibrated 80% + rbvsr 20%），用真实广告赛道比较；</li>
+<li>校准：服务器上抓更多真实 360p 广告复核；训练消融：rbvsr 10%（当前）vs 全部 rbvsr（参考工作的做法），用真实广告赛道比较；</li>
 <li>内容：减少不像广告的素材，改进字幕文案和画面的对应。</li>
 </ul>
 

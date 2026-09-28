@@ -32,7 +32,9 @@ material of its own split. Each spec carries its "split".
 
 With --n-ads, clips are drawn with probability proportional to (share of the clip's theme in real ads) / (number of
 clips of that theme), so the dataset's content follows real UGC ads (data/stats/hq/content_coverage.csv) instead of
-the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight.
+the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight. Clips are only ~5 s
+long, so another ad from the same clip mostly repeats its pixels: a clip is the main clip of at most --max-per-clip
+ads and appears in at most --max-uses ads in any role (extra scene, split / collage / pip part).
 
 Usage (from the repo root):
   .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \\
@@ -43,6 +45,7 @@ Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/spec
 """
 
 import argparse
+import collections
 import hashlib
 import json
 import os
@@ -204,12 +207,15 @@ def camera_for(rng, clip, cfg):
     return cam, target, float(src_shake)
 
 
-def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, screens=None, theme=None, brand=None, palette=0):
+def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, screens=None, theme=None, brand=None, palette=0,
+            uses=None, max_uses=None):
     split = getattr(clip, "split", None)
     if split is not None:                          # only material of the ad's own split
         clips = clips[clips.split == split]
         stills = stills[stills.split == split] if stills is not None else None
         screens = (screens or {}).get(split)
+    if uses is not None:                           # extra scenes and layout parts only from clips not used up yet
+        clips = clips[clips.clip_id.map(lambda c: uses.get(c, 0) < max_uses)]
     lengths = shot_lengths(fps)
     sw, sh, src_fps, nb = probe(clip.file)
     ok = {a: w for a, w in cfg["aspects"].items() if fits(sw, sh, a, gt_short, scale)}
@@ -308,8 +314,8 @@ def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, scr
                 s = {"kind": "layout", "layout": "phone", "frames": n, "palette": palette, "parts": [scr] + behind}
             else:
                 s = scr
-        elif k == card_at:
-            s = card("card", min(max(n, int(rng.integers(40, 80))), total - used), image_prob=0.8)
+        elif k == card_at and (nc := min(int(rng.uniform(1.2, 2.5) * fps), total - used, int(0.35 * total))) >= fps:
+            s = card("card", nc, image_prob=0.8)          # cards last 1-2.5 s and take at most a third of the ad
             n = s["frames"]
         elif k == collage_at:
             parts = [video_shot(sc, sc["pos"], n, 1.0)]
@@ -361,6 +367,8 @@ def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, scr
             used -= transitions[-1]["frames"]
         shots.append(card("end", end_card, text=str(rng.choice(CTAS)), image_prob=0.4))
         used += end_card
+    if sum(s["frames"] for s in shots if s["kind"] == "slide") > 0.4 * used:
+        return None                                # mostly cards: the footage ran out (real ads: ~7% of frames are cards)
     return {"aspect": str(want), "shots": shots, "transitions": transitions, "frames": used, "portrait_layout": layout,
             "scenes": len(scenes), "shake_target": round(scenes[0]["target"], 3), "src_shake": round(scenes[0]["src_shake"], 3)}
 
@@ -378,7 +386,10 @@ def main():
     ap.add_argument("--max-frames", type=int, default=150)
     ap.add_argument("--per-clip", type=int, default=1, help="ads planned per HQ clip (without --n-ads)")
     ap.add_argument("--n-ads", type=int, default=0, help="draw this many ads, clips weighted towards real ad themes")
-    ap.add_argument("--max-per-clip", type=int, default=3, help="with --n-ads: at most this many ads per HQ clip")
+    ap.add_argument("--max-per-clip", type=int, default=2,
+                    help="with --n-ads: at most this many ads per HQ clip (clips are ~5 s, so a third ad mostly repeats pixels)")
+    ap.add_argument("--max-uses", type=int, default=3,
+                    help="at most this many ads per HQ clip in any role (main clip, extra scene, split / collage / pip part)")
     ap.add_argument("--only-split", choices=["train", "dev", "test"], help="plan ads only from sources of this split")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
@@ -428,26 +439,27 @@ def main():
     clips = clips.reset_index(drop=True)
     w, themes = theme_weights(clips, dcfg["other_theme_share"])
     clips["theme"] = themes if themes is not None else "none"
-    if args.n_ads:
-        picks, used_n = [], np.zeros(len(clips), int)
-        while len(picks) < args.n_ads and (w > 0).any():
-            i = int(rng.choice(len(clips), p=w / w.sum()))
-            picks.append(i)
-            used_n[i] += 1
-            if used_n[i] >= args.max_per_clip:
-                w[i] = 0.0
-        picks = np.array(picks)
-        print("ad themes drawn:", clips.theme.iloc[picks].value_counts().to_dict())
-        order = [(clips.iloc[i], int((picks[:j] == i).sum())) for j, i in enumerate(picks)]
-    else:
-        order = [(c, k) for c in clips.itertuples() for k in range(args.per_clip)]
     with_text = set()
     for t in args.source_text:
         d = pd.read_csv(t)
         with_text |= set(d.file[d.has_text.astype(bool)])
-    styles = {}
+    # clips are drawn one ad at a time, so that every use (main clip or part of another ad) counts towards the caps
+    uses, mains, styles, drawn = collections.Counter(), collections.Counter(), {}, []
+    row = {c: i for i, c in reversed(list(enumerate(clips.clip_id)))}
+
+    def next_clip():
+        if args.n_ads:
+            while n_out < args.n_ads and (w > 0).any():
+                yield clips.iloc[int(rng.choice(len(clips), p=w / w.sum()))]
+        else:
+            for c in clips.itertuples():
+                yield from [c] * args.per_clip
+
     with open(args.out, "w") as f:
-        for clip, k in order:
+        for clip in next_clip():
+            k = mains[clip.clip_id]
+            mains[clip.clip_id] += 1
+            drawn.append(clip.theme)
             style = pick(rng, dcfg["styles"])
             cfg = {**dcfg, **dcfg["style"][style], "_real_shake": shake}
             fps = int(pick(rng, dcfg["fps"]))
@@ -455,16 +467,25 @@ def main():
             brand = brand_name(random.Random(int(rng.integers(2 ** 31))))
             palette = int(rng.integers(len(PALETTES)))
             plan = plan_ad(rng, clip, clips, stills, cfg, args.gt_short, args.scale, args.max_frames, fps, screens, theme,
-                           brand, palette)
-            if plan is None:
-                continue
-            srcs = {p.get("src") for s in plan["shots"] for p in [s, *s.get("parts", [])]}
-            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "split": clip.split, "fps": fps,
-                    "style": style, "theme": theme, "brand": brand, "palette": palette, "src_text": bool(srcs & with_text),
-                    "pregated": bool(args.gate), **plan}
-            f.write(json.dumps(spec) + "\n")
-            n_out += 1
-            styles[style] = styles.get(style, 0) + 1
+                           brand, palette, uses, args.max_uses)
+            used = set()
+            if plan is not None:
+                parts = [p for s in plan["shots"] for p in [s, *s.get("parts", [])]]
+                used = {p["clip_id"] for p in parts if p.get("clip_id")}
+                uses.update(used)
+                srcs = {p.get("src") for p in parts}
+                spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "split": clip.split,
+                        "fps": fps, "style": style, "theme": theme, "brand": brand, "palette": palette,
+                        "src_text": bool(srcs & with_text), "pregated": bool(args.gate), **plan}
+                f.write(json.dumps(spec) + "\n")
+                n_out += 1
+                styles[style] = styles.get(style, 0) + 1
+            if args.n_ads:
+                for c in used | {clip.clip_id}:
+                    if mains[c] >= args.max_per_clip or uses[c] >= args.max_uses:
+                        w[row[c]] = 0.0
+    print("ad themes drawn:", pd.Series(drawn).value_counts().to_dict())
+    print(f"clips used: {len(uses)} of {len(clips)}; uses per clip {dict(sorted(collections.Counter(uses.values()).items()))}")
     print(f"{n_out} ad specs from {len(clips)} clips -> {args.out}; styles {styles}")
 
 

@@ -98,11 +98,11 @@ ugc:
 degrade:
   # LQ 短边（make_pairs --scale auto）：360 / 540 / 720 -> 1080，即 ×3 / ×2 / ×1.5
   lq_short: {360: 0.34, 540: 0.33, 720: 0.33}
-  # 两套参数：rbvsr = Real-ESRGAN / RealBasicVSR / DOVE 训练用的原版范围（从轻微到"看不清"都有）；
+  # 两套参数：rbvsr = Real-ESRGAN / RealBasicVSR / DOVE 训练用的原版范围（重退化，从轻微到"看不清"都有）；
   #           calibrated = 按真实 Meta 360p / 720p 广告校准的日常退化。
-  # 训练集照参考工作，100% 用 rbvsr（三个工作都没有单独的重退化比例，全部样本从这一套宽范围里随机抽）。
-  # calibrated 用于 dev / test 主测试集（像真实广告），也作训练消融，如 --set degrade.rbvsr_prob=0.2（calibrated 80% + rbvsr 20%）
-  rbvsr_prob: 1.0
+  # 训练集：每个 LQ 版本以 rbvsr_prob 的概率用 rbvsr，否则用 calibrated。先定 10%（2026-09-28）；
+  # 参考工作的做法相当于 1.0（全部样本从 rbvsr 这一套宽范围里抽），作为消融：--set degrade.rbvsr_prob=1.0
+  rbvsr_prob: 0.1
   # dev / test 用的网格（make_pairs --grid）：每条 GT 生成 尺寸 × 编码 的全部组合，用 calibrated；
   # 270 是 ×4 兼容子集。重退化子集（和训练集同分布）另跑一次：--grid --set degrade.grid.rbvsr_prob=1.0
   grid:

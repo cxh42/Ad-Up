@@ -177,14 +177,20 @@ class ShotRenderer:
         self.card = (c1 * (1 - g) + c2 * g).astype(np.uint8)
         taken, n = [], self.n
         self.photo = None
+        wide = bw > bh                                          # landscape cards: photo on the left, text on the right
         if s.get("image"):
-            self.photo = self._card_photo(s["image"], pr, 0.5 if role == "card" else 0.42)
+            self.photo = self._card_photo(s["image"], pr, 0.5 if role == "card" or wide else 0.42, 0.3 if wide else 0.5)
             if self.photo is not None:
                 _, _, x, y, w, h = self.photo
                 taken.append((x, y, x + w, y + h))
         brand = s.get("brand") or brand_name(pr)
         theme = s.get("theme")
         ov = self.overlays
+        side = wide and self.photo is not None
+        tx, tw = 0.5, 0.82                                      # text column: centre and width (fractions of bw)
+        if side:                                                # the space right of the photo, with margins
+            right = (self.photo[2] + self.photo[4]) / bw
+            tx, tw = (right + 1) / 2, (1 - right) * 0.85
 
         def text_block(text, family, size, color, max_w=0.82):
             font, name = pick_font(pr, family, size)
@@ -201,37 +207,41 @@ class ShotRenderer:
             if self.photo is None:                              # type-only card: big text in the middle
                 size = max(int(max(bw, bh) * pr.uniform(0.045, 0.075)), 16)
                 spot = lambda: (0.5, pr.uniform(0.38, 0.55))
+            elif side:                                          # headline next to the product photo
+                size = max(int(max(bw, bh) * pr.uniform(0.032, 0.05)), 14)
+                spot = lambda: (tx, pr.uniform(0.42, 0.58))
             else:                                               # headline above or below the product photo
                 size = max(int(max(bw, bh) * pr.uniform(0.032, 0.055)), 14)
                 above = pr.random() < 0.6
                 spot = lambda: (0.5, pr.uniform(0.1, 0.22) if above else pr.uniform(0.75, 0.86))
-            font, name, size = fitted_font(pr, pr.choice(["heavy", "sans_bold", "serif"]), size, [text], bw * 0.82)
-            img = draw_block(wrap([(w, fg) for w in text.split()], font, size, bw * 0.82), font, size)
+            font, name, size = fitted_font(pr, pr.choice(["heavy", "sans_bold", "serif"]), size, [text], bw * tw)
+            img = draw_block(wrap([(w, fg) for w in text.split()], font, size, bw * tw), font, size)
             cx, cy = free_spot(pr, img.width, img.height, bw, bh, spot, taken)
             ov.append(item("slide_text", "headline", name, size, [(3, n, img, cx, cy, pr.choice(["slide", "pop", "fade"]))], [text]))
             if pr.random() < 0.4:
                 lsize = max(int(max(bw, bh) * pr.uniform(0.018, 0.028)), 12)
                 limg, ltext, lname = logo_image(pr, brand, lsize, fg)
-                cx, cy = free_spot(pr, limg.width, limg.height, bw, bh, lambda: (0.5, pr.choice([0.05, 0.93])), taken)
+                cx, cy = free_spot(pr, limg.width, limg.height, bw, bh, lambda: (tx, pr.choice([0.05, 0.93])), taken)
                 ov.append(item("slide_text", "logo", lname, lsize, [(0, n, limg, cx, cy, None)], [ltext]))
         else:                                                   # end card
             lsize = max(int(max(bw, bh) * pr.uniform(0.035, 0.07)), 14)
             limg, ltext, lname = logo_image(pr, brand, lsize, accent if luma(bg) > 200 and luma(accent) < 200 else fg)
-            ly = 0.14 if self.photo is not None else pr.uniform(0.3, 0.42)
-            cx, cy = free_spot(pr, limg.width, limg.height, bw, bh, lambda: (0.5, ly), taken)
+            ly = 0.35 if side else 0.14 if self.photo is not None else pr.uniform(0.3, 0.42)
+            cx, cy = free_spot(pr, limg.width, limg.height, bw, bh, lambda: (tx, ly), taken)
             ov.append(item("slide_text", "logo", lname, lsize, [(0, n, limg, cx, cy, pr.choice([None, "pop", "fade"]))], [ltext]))
             if pr.random() < 0.5:
                 tsize = max(int(max(bw, bh) * pr.uniform(0.015, 0.024)), 11)
                 tag = short_line(pr, theme, 3, 7)
-                timg, tname = text_block(tag, pr.choice(["sans", "serif"]), tsize, fg, 0.7)
-                cx, cy = free_spot(pr, timg.width, timg.height, bw, bh, lambda: (0.5, ly + pr.uniform(0.05, 0.08)), taken)
+                timg, tname = text_block(tag, pr.choice(["sans", "serif"]), tsize, fg, min(tw, 0.7))
+                cx, cy = free_spot(pr, timg.width, timg.height, bw, bh,
+                                   lambda: (tx, ly + pr.uniform(0.05, 0.08) * (1.6 if wide else 1)), taken)
                 ov.append(item("slide_text", "tagline", tname, tsize, [(4, n, timg, cx, cy, "fade")], [tag]))
             if pr.random() < 0.7:
                 csize = max(int(max(bw, bh) * pr.uniform(0.016, 0.025)), 12)
                 text = s.get("text") or pr.choice(["Shop now", "Learn more", "Download now", "Get yours today"])
                 pimg, pname = pill_image(pr, text, csize, accent, bg if luma(bg) != luma(accent) else (0, 0, 0))
-                cy0 = 0.83 if self.photo is not None else pr.uniform(0.6, 0.72)
-                cx, cy = free_spot(pr, pimg.width, pimg.height, bw, bh, lambda: (0.5, cy0), taken)
+                cy0 = 0.66 if side else 0.83 if self.photo is not None else pr.uniform(0.6, 0.72)
+                cx, cy = free_spot(pr, pimg.width, pimg.height, bw, bh, lambda: (tx, cy0), taken)
                 ov.append(item("slide_text", "cta", pname, csize, [(8, n, pimg, cx, cy, pr.choice(["pop", "slide"]))], [text]))
             if pr.random() < 0.3:
                 fsize = max(int(max(bw, bh) * 0.011), 9)
@@ -243,18 +253,21 @@ class ShotRenderer:
         self.info.update({"role": role, "palette": s.get("palette"), "photo": s.get("image") if self.photo is not None else None,
                           "text": [t for it in ov for t in it["texts"]]})
 
-    def _card_photo(self, src, pr, cy):
+    def _card_photo(self, src, pr, cy, cx=0.5):
         """A product photo for a card, cut to a circle, a rounded rectangle or a full-width band, with a soft shadow.
         Returns (rgb, alpha, x, y, w, h), or None when the photo is too small to fill the shape without upscaling."""
         bw, bh = self.bw, self.bh
-        shape = pr.choice(["circle", "round", "round", "band"])
+        shape = pr.choice(["circle", "round", "round"] + (["band"] if bh >= bw else []))
+        base = min(bw, bh)                                      # shapes follow the short side (landscape cards too)
         if shape == "circle":
-            w = h = even(bw * pr.uniform(0.55, 0.75))
+            w = h = even(base * pr.uniform(0.55, 0.75))
         elif shape == "round":
-            w = even(bw * pr.uniform(0.68, 0.86))
+            w = even(base * pr.uniform(0.68, 0.86))
             h = even(w * pr.choice([1.0, 1.25]))
         else:
             w, h = bw, even(bh * pr.uniform(0.38, 0.5))
+        if h > 0.8 * bh:                                        # leave room for the headline
+            w, h = even(w * 0.8 * bh / h), even(0.8 * bh)
         img = cv2.cvtColor(cv2.imread(still_path(src, w, h)), cv2.COLOR_BGR2RGB)
         cw, ch = max_crop(img.shape[1], img.shape[0], w, h)
         if cw < w:
@@ -268,7 +281,7 @@ class ShotRenderer:
         else:
             m = supersampled(w, h, lambda d, k: d.rectangle([0, 0, w * k, h * k], fill=255))
         alpha = np.asarray(m, np.float32)[..., None] / 255
-        x, y = (bw - w) // 2, int(np.clip(cy * bh - h / 2, 0, bh - h))
+        x, y = int(np.clip(cx * bw - w / 2, 0, bw - w)), int(np.clip(cy * bh - h / 2, 0, bh - h))
         if shape != "band":                                     # drop shadow under the shape
             sh = cv2.GaussianBlur(alpha[..., 0], (0, 0), w * 0.03) * 0.45
             dy = int(w * 0.02)
@@ -338,11 +351,12 @@ class ShotRenderer:
                 g = np.linspace(0, 1, bh, dtype=np.float32)[:, None, None]
                 self.phone_bg = (c1 * (1 - g) + c1 * float(r.uniform(0.6, 0.9)) * g).repeat(bw, 1).astype(np.uint8)
         elif lay == "pip":
-            iw = even(bw * r.uniform(0.3, 0.42))
+            iw = even(min(bw, bh) * r.uniform(0.3, 0.42))          # the short side: landscape insets fit too
             ih = even(iw * (16 / 9 if r.random() < 0.6 else 1.0))
             self.parts = [mk(s["parts"][0], bw, bh), mk(s["parts"][1], iw, ih)]
-            self.inset_xy = (even(bw * r.uniform(0.04, 0.1)) if r.random() < 0.5 else even(bw * 0.96 - iw),
-                             even(bh * r.uniform(0.08, 0.18)) if r.random() < 0.5 else even(bh * 0.72 - ih))
+            x = even(bw * r.uniform(0.04, 0.1)) if r.random() < 0.5 else even(bw * 0.96 - iw)
+            y = even(bh * r.uniform(0.08, 0.18)) if r.random() < 0.5 else even(bh * 0.72 - ih)
+            self.inset_xy = (int(np.clip(x, 0, bw - iw)), int(np.clip(y, 0, bh - ih)))
             m = np.zeros((ih, iw), np.uint8)
             rad = int(iw * 0.08)
             cv2.rectangle(m, (rad, 0), (iw - rad, ih), 255, -1)
