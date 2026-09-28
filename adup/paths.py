@@ -3,8 +3,8 @@
 The layout follows the pipeline (see README.md and data/README.md):
 
   data/real_ads    real ads (TikTok / Meta): the real-world LQ domain; measured, never trained on
-  data/hq          >= 2K GT sources; each clip directory holds its manifest.csv and gate_<gt_short>.csv
-  data/benchmarks  public datasets (KwaiVIR, VideoLQ, HQ-VSR)
+  data/hq          GT sources (sharp at 1080p); each clip directory holds its manifest.csv and gate_<gt_short>.csv
+  data/benchmarks  public datasets (KwaiVIR, VideoLQ)
   data/stats       measurement tables the pair pipeline reads (real-ad targets, HQ-pool content tags)
   data/pairs       generated (GT, LQ) datasets, one directory per dataset
   data/assets      fonts and small models
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 REAL_ADS = DATA / "real_ads"          # <scraper>/<date>/{videos/, summary.csv, sheets/, shots/}
 HQ = DATA / "hq"                      # ultravideo/{4k,8k}/  unsplash_lite/  ui_screens/
-BENCHMARKS = DATA / "benchmarks"      # KwaiVIR/  VideoLQ/  HQ-VSR/
+BENCHMARKS = DATA / "benchmarks"      # KwaiVIR/  VideoLQ/
 PAIRS = DATA / "pairs"                # <dataset>/{specs.jsonl, config.yaml, <ad id>/{gt.mp4, lq_<k>.mp4, meta.json, shots/}}
 ASSETS = DATA / "assets"
 FONTS = ASSETS / "fonts"              # OFL caption fonts + Noto Color Emoji (adup.ugc.fonts)

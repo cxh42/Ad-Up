@@ -6,9 +6,9 @@
 #   degrade  GT -> LQ：Real-ESRGAN / RealBasicVSR 式二阶退化（adup/degrade/second_order.py）
 # 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director）、adup.hq.gate（gt）。
 # 每条配对的 meta.json 记录实际抽到的参数；数据集目录下的 config.yaml 是生成时用的这份。
-# 临时改参数不用复制文件：--set degrade.tail_prob=0.3
+# 临时改参数不用复制文件：--set degrade.rbvsr_prob=0.2
 #
-# 版本历史（旧版本文件在 git 历史里；v5 生成了 data/pairs/ugc_v5_*，见 commit 69e1f6c）：
+# 版本历史（旧版本文件在 git 历史里；v5 及更早的配对数据已删除，需要时按 commit 69e1f6c 重新生成）：
 #   v1–v4  拍摄/ISP -> 剪辑导出 -> 平台转码（H.264/VP9/AV1/HEVC）-> 二次上传 的链式退化，逐步校准
 #   v5     加入 UGC 化；GT 短边 1440，LQ 540–720
 #   v6     以 Meta 为主的画幅（未生成数据）
@@ -72,17 +72,20 @@ ugc:
 degrade:
   # LQ 短边（make_pairs --scale auto）：360 / 540 / 720 -> 1080，即 ×3 / ×2 / ×1.5
   lq_short: {360: 0.34, 540: 0.33, 720: 0.33}
-  # 每个 LQ 版本以 tail_prob 的概率用 RealBasicVSR 原版参数（tail，重退化），否则用 core（向真实广告校准）
-  tail_prob: 0.2
-  # dev / test 用的网格（make_pairs --grid）：每条 GT 生成 尺寸 × 编码 的全部组合，只用 core；
-  # 270 是 ×4 兼容子集。重退化子集另跑一次：--grid --set degrade.grid.tail_prob=1.0
+  # 两套参数：rbvsr = Real-ESRGAN / RealBasicVSR / DOVE 训练用的原版范围（从轻微到"看不清"都有）；
+  #           calibrated = 按真实 Meta 360p / 720p 广告校准的日常退化。
+  # 训练集照参考工作，100% 用 rbvsr（三个工作都没有单独的重退化比例，全部样本从这一套宽范围里随机抽）。
+  # calibrated 用于 dev / test 主测试集（像真实广告），也作训练消融，如 --set degrade.rbvsr_prob=0.2（calibrated 80% + rbvsr 20%）
+  rbvsr_prob: 1.0
+  # dev / test 用的网格（make_pairs --grid）：每条 GT 生成 尺寸 × 编码 的全部组合，用 calibrated；
+  # 270 是 ×4 兼容子集。重退化子集（和训练集同分布）另跑一次：--grid --set degrade.grid.rbvsr_prob=1.0
   grid:
     lq_short: [270, 360, 540, 720]
     codec: [h264, vp9]
-    tail_prob: 0.0
+    rbvsr_prob: 0.0
 
-  # ---------------------------------------------------------------- core：日常退化，初值，待用真实 360p/720p 校准
-  core:
+  # ---------------------------------------------------------------- calibrated：日常退化，已按真实 Meta 360p / 720p 校准（docs/ugc_dataset.md 6.1）
+  calibrated:
     stage1:                     # 拍摄 + 剪辑导出
       blur:
         prob: 0.5
@@ -146,10 +149,10 @@ degrade:
         bpp: [0.035, 0.09]      # 真实：Meta 360p 0.052、720p 0.058、TikTok 720p 约 0.06（中位数）
         keyint: [60, 110, 144, 250]
 
-  # ---------------------------------------------------------------- tail：RealBasicVSR 原版参数（重退化、看不清的样本）
+  # ---------------------------------------------------------------- rbvsr：RealBasicVSR 原版参数（训练默认）
   # 与 realbasicvsr_wogan_c64b20_2x30x8_lr1e-4_300k_reds.py 相同，除了：编码器 libx264/h264/mpeg4 -> H.264/VP9，
   # 码率 1e4–1e5 bit/帧（256 px 裁块）换算成 0.15–1.5 bpp，参数整段固定（原版逐帧有小幅漂移）
-  tail:
+  rbvsr:
     stage1:
       blur:
         prob: 1.0

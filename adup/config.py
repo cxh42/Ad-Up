@@ -1,8 +1,8 @@
 """Load a dataset config (configs/pairs/<version>.yaml) with optional command-line overrides.
 
 A config has three sections, one per stage: `gt` (GT gate and plain-clip aspect ratios), `ugc` (director, virtual
-camera, burned-in text, splits) and `degrade` (second-order degradation: presets `core` and `tail`).
-Overrides use dotted keys with YAML values, e.g. --set gt.max_downup_psnr=99 degrade.tail_prob=0.3.
+camera, burned-in text, splits) and `degrade` (second-order degradation: presets `rbvsr` and `calibrated`).
+Overrides use dotted keys with YAML values, e.g. --set gt.max_downup_psnr=99 degrade.rbvsr_prob=0.2.
 """
 
 import yaml

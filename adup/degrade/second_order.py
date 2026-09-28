@@ -14,8 +14,9 @@ changes for offline video pairs:
   - optional UGC extras in stage 1, before the resize: motion blur along the virtual camera's velocity and phone-ISP
     unsharp-mask sharpening
 
-Parameters come in two presets (config section `degrade`): `core`, calibrated against real ads, and `tail`, RealBasicVSR's
-original ranges, drawn with probability tail_prob to cover heavily degraded inputs. Blur, sharpening and motion blur
+Parameters come in two presets (config section `degrade`): `rbvsr`, RealBasicVSR's original ranges (light to unreadable;
+the training default, as in Real-ESRGAN / RealBasicVSR / DOVE), and `calibrated`, fitted to real Meta ads (dev / test
+sets and training ablations). A variant uses `rbvsr` with probability rbvsr_prob. Blur, sharpening and motion blur
 lengths are in pixels of the frame they are applied to.
 """
 
@@ -96,7 +97,7 @@ def sample_compress(rng, c):
 
 def sample_plan(rng, cfg):
     """All random choices of one LQ variant. cfg: config section `degrade`."""
-    preset = "tail" if rng.random() < cfg["tail_prob"] else "core"
+    preset = "rbvsr" if rng.random() < cfg["rbvsr_prob"] else "calibrated"
     c = cfg[preset]
     s1, s2, fin = c["stage1"], c["stage2"], c["final"]
     extras = c.get("extras", {})

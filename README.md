@@ -49,7 +49,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     text.py、fonts.py     烧录字幕、标题、贴纸、小字（按真实广告 OCR 统计设计）；OFL 开源字体
   degrade/             ⑤  GT -> LQ 的退化
     second_order.py       二阶退化（RealBasicVSR 结构）：两轮 模糊→缩放→噪声→JPEG→H.264/VP9，最后缩到 LQ 尺寸；
-                          参数分 core（日常，待校准）和 tail（RealBasicVSR 原版，重退化）
+                          参数分 rbvsr（RealBasicVSR 原版，训练默认）和 calibrated（按真实广告校准，dev / test 用）
     kernels.py            模糊核（来自 BasicSR / mmagic，Apache-2.0）
 configs/pairs/v7.yaml     当前数据集版本的全部参数，分 gt / ugc / degrade 三段；旧版本在 git 历史里
   bench/               ⑥  基准测试：run.py 按统一规则跑各方法（输出 1080p，记录耗时和显存），evaluate.py 在合成集上打分
@@ -138,7 +138,6 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 | Unsplash Lite | `data/hq/unsplash_lite/` | Unsplash Lite 许可，允许内部商用模型训练。 |
 | KwaiVIR（NTIRE 2026） | `data/benchmarks/KwaiVIR/` | 快手竖屏短视频修复基准，研究用途；1080x1920、6 秒、HEVC。 |
 | VideoLQ | `data/benchmarks/VideoLQ/` | 研究基准集。 |
-| HQ-VSR（DOVE） | `data/benchmarks/HQ-VSR/` | 源自 OpenVid-1M。研究用途。 |
 
 Pexels、Pixabay 和 Mixkit 禁止脚本批量下载，Pexels 和 Pixabay 还明确禁止用于机器学习。
 商用训练需要自己拍摄、创作者授权或购买的素材。

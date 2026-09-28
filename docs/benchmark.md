@@ -17,8 +17,8 @@
 ## 2. 测试集
 
 - **合成 dev / test**：按源视频划分（`ugc.director.split`，合成前分好），`director --only-split dev|test` 编排，
-  `make_pairs --grid` 生成：每条 GT 一个 LQ 对应 尺寸 {270, 360, 540, 720} × 编码 {H.264, VP9}，退化用 core。
-  重退化子集另跑：`--grid --set degrade.grid.tail_prob=1.0`。
+  `make_pairs --grid` 生成：每条 GT 一个 LQ 对应 尺寸 {270, 360, 540, 720} × 编码 {H.264, VP9}，退化用 calibrated（按真实广告校准）。
+  重退化子集另跑：`--grid --set degrade.grid.rbvsr_prob=1.0`（RealBasicVSR 原版范围，和训练集同分布）。
   建议规模：dev 50 条、test 100 条广告（各 8 个 LQ）。
 - **真实**：`data/stats/real_ads/splits.csv` 的 test 份（按广告 id 固定划分）；列表在 `data/stats/real_ads/groups/test_{hd,sd}.txt`。
 - 每个 LQ 的因素都在 meta.json：尺寸 / 倍数、编码、退化强度（preset）、画幅、主题、镜头数、文字元素，结果可以按任意因素拆开。

@@ -115,7 +115,7 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config, grid
     names = [v[0] for v in vspecs]
     with tempfile.TemporaryDirectory(dir=out_dir) as tmp:
         prng = np.random.default_rng(rng.randint(0, 2 ** 31))
-        pdeg = {**deg, "tail_prob": deg["grid"].get("tail_prob", 0.0)} if grid else deg
+        pdeg = {**deg, "rbvsr_prob": deg["grid"].get("rbvsr_prob", 0.0)} if grid else deg
         plans = []
         for _, _, codec in vspecs:
             plan = sample_plan(prng, pdeg)
@@ -208,8 +208,8 @@ def main():
     ap.add_argument("--scale", default="2", help="GT / LQ factor, or 'auto' to sample the LQ short side (degrade.lq_short)")
     ap.add_argument("--variants", type=int, default=2, help="LQ versions per GT (random mode)")
     ap.add_argument("--grid", action="store_true",
-                    help="dev / test: one LQ per degrade.grid.lq_short x degrade.grid.codec (preset core unless "
-                         "degrade.grid.tail_prob is set), named lq_<short>_<codec>")
+                    help="dev / test: one LQ per degrade.grid.lq_short x degrade.grid.codec (preset calibrated "
+                         "unless degrade.grid.rbvsr_prob is set), named lq_<short>_<codec>")
     ap.add_argument("--no-shot-files", action="store_true",
                     help="do not write shots/ (boundaries stay in meta.json); saves most of the space for training sets")
     ap.add_argument("--max-frames", type=int, default=150, help="--manifest only: frames per clip")

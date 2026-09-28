@@ -4,14 +4,14 @@
 
 ```
 real_ads/      ① 真实广告：目标 LQ 域，只做统计和评测，不做训练
-hq/            ② 高质量素材（≥2K）：GT 的来源
+hq/            ② 高质量素材（在 1080p 下真实清晰）：GT 的来源
 stats/         ③ 测量表：从 ① 和 ② 测出来、配对流程运行时要读的统计
 pairs/         ④ 生成的 (GT, LQ) 配对数据集
 benchmarks/       公开数据集：评测和参考
 assets/           字体、人脸检测模型
 ```
 
-代码里的路径都定义在 `adup/paths.py`。数量是本机 2026-09-24 的情况。
+代码里的路径都定义在 `adup/paths.py`。数量是本机 2026-09-28 的情况。
 
 ## real_ads/：真实广告
 
@@ -20,7 +20,8 @@ assets/           字体、人脸检测模型
 | 目录 | 内容 |
 |---|---|
 | `tiktok_topads/20260923/`、`20260924/` | TikTok Creative Center Top Ads，55 + 42 条（576–720p）；`videos_1080p/` 是其中 18 条的 1080p 版本 |
-| `meta_adlib_web/20260924/` | Meta 广告库视频广告，164 条 |
+| `meta_adlib_web/20260924/` | Meta 广告库视频广告，164 条（只有 720p） |
+| `meta_adlib_web/20260928/` | Meta 广告库视频广告，64 条，720p 和 360p 两个版本都有（跨天重复的广告在 `splits.csv` 里合并） |
 
 每个日期目录里：`videos/<行业或关键词>/*.mp4`（Meta 广告库另有 `videos_sd/`，同一条广告的 360p 版本，2026-09-27 起的抓取才有），`summary.csv`（每条广告的元数据和文案，字幕文案也从这里取），
 `sheets/`（早期浏览用的帧缩略图拼图，生成脚本已删除），`shots/<广告 id>.json`（镜头边界，`adup/analysis/shots.py` 写入）。
@@ -31,13 +32,13 @@ assets/           字体、人脸检测模型
 |---|---|---|
 | `ultravideo/` | `short.csv`（UltraVideo 全部片段的目录）和 `zip_index.json`（片段在远程 zip 里的位置），4K 和 8K 共用 | |
 | `ultravideo/4k/` | 719 条 4K 片段，`<类别>/<clip_id>.mp4` | CC-BY-4.0，仅限非商业研究 |
-| `ultravideo/8k/` | 228 条 8K 片段，2K+ 竖屏 GT 的主要来源 | 同上 |
+| `ultravideo/8k/` | 228 条 8K 片段 | 同上 |
 | `unsplash_lite/` | Unsplash Lite 的照片元数据（`*.tsv000`）；`images/` 是渲染时按需下载的照片 | 允许内部商用训练 |
 | `ui_screens/` | 合成的手机 App 界面长截图（录屏镜头的 GT），12 张 | 自有 |
 | `kwaivir/` | 只有 `manifest.csv` 和 `gate_1080.csv`：指向 `benchmarks/KwaiVIR/train/synthetic/HQ-synthetic*/` 的 200 条原生竖屏 1080×1920 短视频，类别来自快手标签 | NTIRE 2026 比赛数据，仅限研究 |
 
 每个视频目录里有 `manifest.csv`（素材清单，下载脚本写入）和 `gate_<GT 短边>.csv`（预筛结果，`adup/hq/gate.py`
-写入）。v7 用 `gate_1080.csv`：KwaiVIR 已跑；UltraVideo 4K / 8K 留给服务器（现有的 `gate_1440.csv` 是 v5 的）。
+写入）。v7 用 `gate_1080.csv`：KwaiVIR 已跑（190 / 200 通过）；UltraVideo 4K / 8K 留给服务器。
 
 ## stats/：测量表
 
@@ -58,7 +59,7 @@ assets/           字体、人脸检测模型
 | `hq/content_clips.csv` | 已下载片段的主题（CLIP 看画面） | `ugc_content.py clips` | `ugc/director.py` |
 | `hq/content_unsplash.csv` | Unsplash 照片（短边 ≥1440）的主题和横竖 | `ugc_content.py stills` | `ugc/director.py`（照片镜头）、`hq/ui_screens.py` |
 | `hq/content_coverage.csv` | 每个主题在真实广告中的占比 vs 素材池里的数量 | `ugc_content.py coverage` | `ugc/director.py`（按主题加权抽素材） |
-| `benchmarks/` | VideoLQ、HQ-VSR 的退化指标和质量分，作参照 | 同 real_ads | `analysis/compare.py` |
+| `benchmarks/` | VideoLQ、HQ-VSR 的退化指标和质量分，作参照（HQ-VSR 原视频已删，统计保留） | 同 real_ads | `analysis/compare.py` |
 
 合成数据的指标不放这里，放在 `outputs/calibration/`。
 
@@ -77,22 +78,15 @@ assets/           字体、人脸检测模型
     meta.json                      每一步的参数、镜头边界和来源、所属划分（train / dev / test）
 ```
 
-| 目录 | 内容 |
-|---|---|
-| `ugc_v5_calib/` | v5 流程（2K GT，已被 v7 取代），30 条广告 × 2 个 LQ，用于校准 |
-| `ugc_v5_preview/` | v5 流程（已被 v7 取代），8 条广告 × 1 个 LQ，按真实广告主题占比抽取，人工看效果用 |
-| `cuttest_2k_x2/` | 4 条多镜头序列，测 DOVE 在镜头切换处的表现 |
-| `archive/` | 旧版本：1080p GT 的配对（`uv_p1080_x2*`）、v1–v4 的校准集（`calib_*`）。已被取代 |
-
-这几个数据集是在引入 `config.yaml` 之前生成的，参数只记录在每条的 `meta.json` 里。
+本机目前没有配对数据：v5 及更早的配对已于 2026-09-28 删除（需要时按 git 历史重新生成）；v7 的本机小样本测试只放在临时目录，
+统计结果在 `outputs/calibration/`。正式的训练集和 dev / test 在服务器上生成。
 
 ## benchmarks/：公开数据集
 
 | 目录 | 内容 | 用途 |
 |---|---|---|
-| `KwaiVIR/` | NTIRE 2026 快手短视频修复：`train/`、`val_input/`、`test_data/`，全部 1080x1920；`shots/` 是野外视频的镜头边界 | 评测 |
+| `KwaiVIR/` | NTIRE 2026 快手短视频修复，全部 1080x1920：`train/synthetic/HQ-synthetic*/`（200 条高清片段，作 GT 素材，见 `hq/kwaivir/`）、`train/wild/`（48 条野外低质视频）、`val_input/`、`test_data/`；`shots/` 是野外视频的镜头边界。比赛自带的 `LQ-synthetic*` 用不上，已删 | GT 素材、评测 |
 | `VideoLQ/` | 真实世界视频超分基准 | 评测 |
-| `HQ-VSR/` | DOVE 原训练集（约 1080p），不满足 ≥2K，不用作 GT | 参照 |
 
 ## assets/
 

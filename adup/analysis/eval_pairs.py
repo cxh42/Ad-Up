@@ -4,7 +4,7 @@ Pairs come from adup.make_pairs (meta.json gives the shot boundaries). A model t
 shows up as a PSNR / LPIPS drop in the frames next to the cut.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.analysis.eval_pairs --pairs data/pairs/cuttest_2k_x2 --pred outputs/runs/dove/x \
+  .venv-iqa/bin/python -m adup.analysis.eval_pairs --pairs data/pairs/<dataset> --pred outputs/runs/dove/x \
       --lq lq_0 [--window 4] [--csv out.csv]
 Prediction files are <pred>/<pair_id>_<lq>.mp4.
 """
