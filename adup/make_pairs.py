@@ -10,7 +10,8 @@ Per ad (random parameters are drawn once per LQ variant and held fixed over the 
             2. gate (hq/gate.py) unless the spec's clips were pre-gated
             3. render each shot (ugc/render.py: face-aware crop, virtual handheld camera, layouts, stills, slides,
                screen recordings) and join them with transitions (ugc/sequence.py)
-            4. burned-in text: captions, hook titles, stickers, fine print (ugc/text.py), and its per-frame mask
+            4. burned-in text and graphics by the ad's style: captions, headlines, native text, prices, logo, CTA
+               button, stickers, fine print, arrows (ugc/text.py), with the cards' own text, and its per-frame mask
   LQ        5. second-order degradation (degrade/second_order.py): stage 1 (blur, resize, noise, JPEG, H.264 / VP9)
                while the GT is rendered, then stage 2 and the final resize / compression from the stage-1 file
 Frame count and fps are preserved end to end, so GT and LQ stay frame-aligned.
@@ -45,7 +46,7 @@ from adup.hq.gate import crop_filter, gate_ok, gate_stats
 from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, probe, split_at
 from adup.ugc.render import ShotRenderer
 from adup.ugc.sequence import sequence_frames, shot_ranges
-from adup.ugc.text import draw_mask, draw_text, plan_text
+from adup.ugc.text import draw_mask, draw_text, item_meta, plan_text, shift
 
 
 def pick_weighted(rng, weights):
@@ -103,7 +104,14 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config, grid
     renderers = [ShotRenderer(s, gw, gh, fps, nrng, ugc) for s in shots]
     ranges = shot_ranges(shots, transitions)
     n = ranges[-1][1]
-    items, text_meta = plan_text(n, fps, gw, gh, rng, ugc["text"])
+    # overlays follow the ad's style and theme; cards carry their own text, drawn by the same pass
+    items, _ = plan_text(n, fps, gw, gh, rng, ugc["text"], style=seq.get("style", "ugc"), theme=seq.get("theme"),
+                         brand=seq.get("brand"), palette=seq.get("palette"), cuts=[a for a, _ in ranges[1:]],
+                         quiet=[r for s, r in zip(shots, ranges) if s.get("kind") == "slide"],
+                         src_text=seq.get("src_text", False))
+    for ren, (a, b) in zip(renderers, ranges):
+        items += [shift(it, a, b) for it in ren.overlays]
+    text_meta = item_meta(items, gw, gh)
 
     os.makedirs(out_dir, exist_ok=True)
     shared = len({ls for ls in lq_sizes}) == 1

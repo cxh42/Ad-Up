@@ -29,24 +29,47 @@ gt:
 ugc:
   director:
     aspects: {"9:16": 0.5, "16:9": 0.5}   # 横竖各半（9/26 会议）；真实广告 92–100% 是竖屏，测试集按真实分布
-    # 9:16 广告用横屏素材时，按这个概率做成竖屏版式（实测镜头占比：模糊填充 Meta 4.8%、TikTok 1.8%，分屏约 3%）
+    # 帧率：248 条真实广告实测 30 fps 78%、24 fps 14%、25 fps 7%
+    fps: {30: 0.79, 24: 0.14, 25: 0.07}
+    # 广告风格（48 条真实广告人工标注，data/stats/real_ads/ad_anatomy.csv）：创作者（UGC）56% + 混合 10%，
+    # 品牌 / 代理制作 25%，游戏 / AI 画面 6%（暂无素材，不做）
+    styles: {ugc: 0.7, brand: 0.3}
+    # 9:16 广告用横屏素材时，按这个概率做成竖屏版式（实测镜头占比：模糊填充 Meta 4.8%、TikTok 1.8%，分屏约 3%，黑边约 2%）
     portrait_layout_prob: 0.08
-    portrait_layouts: {fit_blur: 0.65, split: 0.35}
+    portrait_layouts: {fit_blur: 0.5, fit_solid: 0.2, split: 0.3}
     # 镜头长度来自真实广告（data/stats/real_ads/shots.csv）；相邻镜头交替普通构图和放大
     punch_in_prob: 0.4
     punch_in_zoom: [1.12, 1.3]
-    jump_cut_prob: 0.7          # 跳剪：跳过一小段素材，像创作者剪掉停顿
-    jump_skip_s: [0.1, 0.8]
-    # 非跳剪处的转场类型和长度（帧）
-    transitions: {cut: 0.8, dissolve: 0.08, whip: 0.06, dip_black: 0.03, dip_white: 0.03}
+    jump_skip_s: [0.1, 0.8]     # 跳剪跳过的素材长度
     transition_frames: {dissolve: [4, 12], whip: [4, 8], dip_black: [6, 12], dip_white: [6, 12]}
-    hook_slide_prob: 0.12       # 开场大字卡片
-    end_card_prob: 0.15         # 结尾 CTA 卡片（真实广告里纯文字卡片占画面 6.6%）
+    scenes: [2, 4]              # 多场景广告的场景数（主素材 + 1–3 条）
     still_prob: 0.15            # 插入同主题照片（Ken Burns / 手持）
     pip_prob: 0.05              # 画中画反应
-    screen_ad_prob: 0.05        # 竖屏广告插入 App 录屏（科技/App 类 ×4）；真实广告里录屏占画面约 3%
-    screen_pip_prob: 0.5        # 口播素材的录屏做成"录屏 + 人脸小窗"
+    collage_prob: 0.03          # 竖屏广告插一个 2×2 拼图镜头（标注：拼图 / 分屏 8%）
+    screen_ad_prob: 0.05        # 竖屏广告插入 App 录屏（科技/App 类 ×4）；真实广告里录屏占画面约 3%，标注 10% 的广告有
+    screen_pip_prob: 0.35       # 口播素材的录屏做成"录屏 + 人脸小窗"
+    screen_phone_prob: 0.4      # 录屏放进手机外框（标注：手机样机 4%，多为手持手机拍屏）
     other_theme_share: 0.02     # --n-ads 抽样时，非广告主题（风景、古董等）素材合计占的比例
+    # 按风格的剪辑参数（标注：多场景 UGC 56% / 品牌 67%，结尾卡片 UGC 7% / 品牌 25–60%，动效卡片品牌 50%）
+    style:
+      ugc:
+        handheld_prob: 1.0          # 按真实广告抖动分布补手持抖动
+        multi_scene_prob: 0.55      # 口播 + 产品 B-roll 等多场景
+        same_source_prob: 0.7       # 多场景时优先用同一源视频的其他片段（同一创作者、同一场地）
+        jump_cut_prob: 0.7          # 同一场景内相邻镜头跳剪
+        transitions: {cut: 0.8, dissolve: 0.08, whip: 0.06, dip_black: 0.03, dip_white: 0.03}
+        hook_slide_prob: 0.05       # 开场大字卡片
+        card_prob: 0.03             # 中间的动效卡片（产品图 + 标题）
+        end_card_prob: 0.1          # 结尾卡片（logo + CTA 按钮）
+      brand:
+        handheld_prob: 0.15         # 品牌片多为稳定器 / 三脚架
+        multi_scene_prob: 0.7
+        same_source_prob: 0.4
+        jump_cut_prob: 0.1
+        transitions: {cut: 0.65, dissolve: 0.2, whip: 0.05, dip_black: 0.05, dip_white: 0.05}
+        hook_slide_prob: 0.03
+        card_prob: 0.4
+        end_card_prob: 0.45
     # 按源视频（UltraVideo 的 YouTube id）划分，同一源的所有片段、照片、录屏只进一个划分，合成前就分好
     split: {train: 0.8, dev: 0.1, test: 0.1}
   camera:
@@ -62,12 +85,15 @@ ugc:
     roll_per_pct: 0.15
   still_camera: {shake_prob: 0.5, drift_prob: 0.8, push_prob: 0.8, push_zoom: [1.05, 1.2]}   # 照片镜头覆盖 camera 的这几项
   text:
-    # 烧录文字（OCR 实测：约 95% 的真实广告几乎每帧都有字）；逐帧的文字 mask 存为 mask.mkv
-    text_prob: 0.95
-    caption_prob: 0.85          # 滚动字幕
-    hook_prob: 0.5              # 开头标题
-    sticker_prob: 0.45          # 贴纸（价格、折扣、CTA、#ad、评分、emoji）
-    fine_print_prob: 0.2        # 小字免责声明
+    # 烧录文字和图形，按广告风格抽（48 条真实广告人工标注，data/stats/real_ads/ad_anatomy.csv）。逐帧的 alpha 存为 mask.mkv。
+    # 标注到的出现率（UGC / 品牌）：字幕 44% / 8%，标题 19% / 83%，logo 7% / 58%，小字免责 4% / 25%，
+    # CTA 按钮 4% / 17%，价格或优惠码 15% / 8%，TikTok 原生小字 11% / 0，箭头圈注 7% / 8%，emoji 4%
+    by_style:
+      ugc:   {logo: 0.07, headline: 0.22, caption: 0.45, native: 0.1, cta: 0.05, promo: 0.13, fine_print: 0.04, sticker: 0.08, annotation: 0.06}
+      brand: {logo: 0.6, headline: 0.85, caption: 0.1, native: 0.0, cta: 0.25, promo: 0.1, fine_print: 0.28, sticker: 0.02, annotation: 0.06}
+    # 字幕样式：细体白字（常见于 Meta）、底板、粗体大写 + 当前词高亮（CapCut 自动字幕）、卡拉 OK 底板
+    caption_styles: {plain: 0.45, plate: 0.25, bold_pop: 0.2, karaoke: 0.1}
+    emoji_prob: 0.05            # 每段字幕带 emoji 的概率
 
 degrade:
   # LQ 短边（make_pairs --scale auto）：360 / 540 / 720 -> 1080，即 ×3 / ×2 / ×1.5

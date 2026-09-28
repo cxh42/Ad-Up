@@ -1,19 +1,30 @@
-"""Turn HQ sources into UGC-ad edit specs (JSONL) for adup.make_pairs: one ad per HQ clip, edited like a creator.
+"""Turn HQ sources into UGC-ad edit specs (JSONL) for adup.make_pairs: one ad per HQ clip, edited like a real ad.
 
-For each HQ clip the director plans a short vertical (or square / landscape) ad the way UGC ads are cut:
+Every ad first gets a style, at the rate seen in real ads (manual annotation of 48 ads, data/stats/real_ads/ad_anatomy.csv,
+docs/ugc_dataset.md §1.3; knobs in ugc.director.style.<style>):
+  ugc    creator-made (about two thirds of real ads): handheld phone camera, jump cuts, punch-ins, captions; half of them
+         cut between scenes (the creator talking, then B-roll of the product)
+  brand  made by the brand or an agency (about a third): steady camera, more dissolves, several scenes, a headline and a
+         logo, motion-graphics cards (product photo on a brand colour) and an end card with logo and CTA button
+Then, for the ad's main HQ clip:
   - target aspect from config weights (half 9:16, half 16:9), never upscaling (9:16 at 1080x1920 needs a 4K landscape
-    or a native portrait source); landscape clips become a portrait layout (clip in a blurred frame, or a split of two
-    moments) at the rate layouts appear in real ads
-  - shots: the clip is cut into sub-shots with lengths drawn from real TikTok shots; consecutive sub-shots are joined
-    by jump cuts (a few frames of the source are skipped, as creators cut pauses) and alternate between normal
-    framing and punch-in zooms (1.12-1.3x, taken from real source pixels)
-  - handheld shake: a target shake is drawn from real ads (adup.analysis.ugc_look on TikTok / Meta) and only the
-    part the source does not already have (gate CSV src_shake) is added by the virtual camera
-  - optional extras: an opening text slide (hook), a closing call-to-action card, a product still of the same theme, a picture-in-picture reaction,
-    phone screen recordings (app ads: ~15% of real ad frames), alone or with the creator's face in a corner
+    or a native portrait source); landscape clips become a portrait layout (clip in a blurred frame or on solid bars,
+    or a split of two moments) at the rate layouts appear in real ads
+  - frame rate drawn from real ads (30 fps for most, 24 / 25 for about a fifth)
+  - scenes: the main clip alone, or with 1-3 more clips: other moments of the same source video (same creator and set)
+    or clips of the same ad theme; shots switch scene every 1-3 shots
+  - shots: lengths drawn from real TikTok shots; consecutive sub-shots of a scene are joined by jump cuts (a few frames
+    of the source are skipped, as creators cut pauses) and alternate between normal framing and punch-in zooms
+    (1.12-1.3x, taken from real source pixels)
+  - handheld shake: a target shake is drawn from real ads (adup.analysis.ugc_look on TikTok / Meta) and only the part
+    the source does not already have (gate CSV src_shake) is added by the virtual camera; brand ads mostly stay steady
+  - optional extras: an opening text slide (hook), a motion-graphics card, an end card, a product still of the same
+    theme, a picture-in-picture reaction, a 2 x 2 collage, phone screen recordings (app ads), alone, with the creator's
+    face in a corner or inside a phone frame
   - transitions mostly hard cuts, otherwise dissolve / whip / dip (rendered by adup.ugc.sequence)
-All knobs are in config section ugc.director (configs/pairs/<version>.yaml). Text overlays are sampled later by
-adup.make_pairs. Only clips that passed the GT gate (adup.hq.gate, --gate) are used.
+Each ad also gets a made-up brand name and a brand palette, shared by its logo, cards and CTA button. Text overlays are
+sampled later by adup.make_pairs from the ad's style and theme. Only clips that passed the GT gate (adup.hq.gate,
+--gate) are used. All knobs are in config section ugc.director (configs/pairs/<version>.yaml).
 
 Train / dev / test are separated by source before composition (ugc.director.split): every clip gets the split of its
 source video (UltraVideo's YouTube id, hashed), stills and screens get one from their own id, and an ad only uses
@@ -24,9 +35,10 @@ clips of that theme), so the dataset's content follows real UGC ads (data/stats/
 the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \
-      --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \
-      --screens data/hq/ui_screens/manifest.csv --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
+  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \\
+      --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \\
+      --screens data/hq/ui_screens/manifest.csv --source-text data/hq/kwaivir/source_text.csv \\
+      --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
 Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
 """
 
@@ -34,22 +46,30 @@ import argparse
 import hashlib
 import json
 import os
+import random
 
 import numpy as np
 import pandas as pd
 
 from adup.config import add_config_args, load_config
 from adup.media import fits, gt_geometry, probe
-from adup.paths import CLIPS_TABLE, COVERAGE_TABLE, HQ, LOOK_TABLE, POOL_TABLE, SHOTS_TABLE
-
-SEQ_FPS = 30
-HOOKS = ["wait for it", "POV: you finally found it", "3 reasons you need this", "I was today years old", "don't skip this",
-         "this changed everything", "honest review", "run don't walk", "day 1 vs day 30", "the viral one", "before vs after",
-         "is it worth it?", "ok but why is no one talking about this", "watch till the end", "my holy grail"]
-CTAS = ["Shop now", "Link in bio", "Tap to shop", "Get yours today", "Download now", "Order now, free shipping",
-        "Try it risk-free", "Limited time offer", "Available now", "Use code SAVE20", "Sign up today", "Learn more"]
+from adup.paths import (
+    CLIPS_TABLE,
+    COVERAGE_TABLE,
+    HQ,
+    LOOK_TABLE,
+    POOL_TABLE,
+    SHOTS_TABLE,
+)
+from adup.ugc.text import CTAS, HOOKS, PALETTES, brand_name
 
 SHAKE_GAIN = 1.07      # measured shake_rms per unit of planned camera shake (calibrated on a static still)
+
+
+def pick(rng, weights):
+    """Key of a {key: weight} dict, drawn by weight."""
+    keys = list(weights)
+    return keys[int(rng.choice(len(keys), p=np.array(list(weights.values()), float) / sum(weights.values())))]
 
 
 def real_shake():
@@ -61,9 +81,10 @@ def real_shake():
     return np.exp(np.random.default_rng(0).normal(np.log(0.4), 1.2, 1000))
 
 
-def shot_lengths():
+def shot_lengths(fps):
+    """Real TikTok shot lengths, in frames at the ad's frame rate."""
     s = pd.read_csv(SHOTS_TABLE)
-    return (s.frames * SEQ_FPS / s.fps).round().astype(int).clip(lower=10).tolist()
+    return (s.frames * fps / s.fps).round().astype(int).clip(lower=10).tolist()
 
 
 # stills that fit next to a clip of each UltraVideo category (themes from adup.analysis.ugc_content)
@@ -74,6 +95,14 @@ STILL_THEMES = {
     "hands_product": ["beauty_product", "accessories", "tech"], "p_packaging": ["beauty_product", "food_drink"],
     "talking_head": ["beauty_product", "accessories", "food_drink", "tech"], "lifestyle": ["home", "lifestyle_outdoor"],
 }
+
+
+# stills for an ad theme (motion-graphics cards, and still shots of clips whose category has none above)
+THEME_STILLS = {"beauty": ["beauty_product", "beauty_applying", "hair"], "fashion": ["fashion", "accessories"],
+                "food": ["food_drink", "cooking"], "home": ["home", "kitchen_appliance", "cleaning"], "tech_app": ["tech"],
+                "pets": ["pets"], "health": ["health", "beauty_product"], "baby_kids": ["baby_kids"],
+                "fitness_sports": ["sports", "fitness"], "car": ["car"], "travel": ["travel"]}
+PRODUCT_STILLS = ["beauty_product", "accessories", "food_drink", "tech", "home"]
 
 
 # UltraVideo pool themes (adup.analysis.ugc_content) -> ad themes of content_coverage.csv
@@ -134,112 +163,206 @@ def other_clip(rng, clips, clip, prefer_category=None):
     return None
 
 
-def plan_ad(rng, clip, clips, stills, lengths, cfg, gt_short, scale, max_frames, screens=None, theme=None):
+def extra_scenes(rng, clips, clip, k, fill, same_source_prob):
+    """k more clips for a multi-scene ad: another moment of the same source video (same creator and set, the A-roll /
+    B-roll of one shoot) with probability same_source_prob, else a clip of the same ad theme. fill(w, h) says whether
+    a source of that size can fill the ad's frame."""
+    out, seen = [], {clip.clip_id}
+    same = clips[(clips.youtube_id == clip.youtube_id) & (clips.clip_id != clip.clip_id)]
+    theme = clips[(clips.theme == getattr(clip, "theme", None)) & (clips.youtube_id != clip.youtube_id)] \
+        if "theme" in clips else clips.iloc[:0]
+    for _ in range(4 * k):
+        if len(out) >= k:
+            break
+        pool = same if len(same) and (rng.random() < same_source_prob or not len(theme)) else theme
+        if not len(pool):
+            break
+        c = pool.iloc[int(rng.integers(len(pool)))]
+        if c.clip_id in seen:
+            continue
+        seen.add(c.clip_id)
+        if fill(*probe(c.file)[:2]):
+            out.append(c)
+    return out
+
+
+def camera_for(rng, clip, cfg):
+    """Virtual-camera overrides for the shots of one clip, (overrides, target shake, source shake). Handheld: add only
+    the shake the clip lacks to reach a shake drawn from real ads. Otherwise (steady brand footage) add none."""
+    src_shake = getattr(clip, "src_shake", np.nan)
+    src_pan = getattr(clip, "src_pan", np.nan)
+    if src_shake is None or np.isnan(src_shake):              # no gate measurement: fall back to the metadata
+        src_shake, src_pan = (0.05, 1.0) if is_static(clip) else (1.0, 10.0)
+    if rng.random() < cfg["handheld_prob"]:
+        target = float(rng.choice(cfg["_real_shake"]))
+        amp = np.sqrt(max(target ** 2 - src_shake ** 2, 0)) / SHAKE_GAIN
+        cam = {"shake_prob": 1.0, "shake_rms": [amp, amp]} if amp > 0.03 else {"shake_prob": 0.0}
+    else:
+        target, cam = float(src_shake), {"shake_prob": 0.0}
+    if src_pan > 3:
+        cam["drift_prob"] = 0.0
+    return cam, target, float(src_shake)
+
+
+def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, screens=None, theme=None, brand=None, palette=0):
     split = getattr(clip, "split", None)
     if split is not None:                          # only material of the ad's own split
         clips = clips[clips.split == split]
         stills = stills[stills.split == split] if stills is not None else None
         screens = (screens or {}).get(split)
-    sw, sh, fps, nb = probe(clip.file)
-    avail = int((nb or clip.frames) * SEQ_FPS / fps)
-    total = min(max_frames, int(avail * 0.85))
+    lengths = shot_lengths(fps)
+    sw, sh, src_fps, nb = probe(clip.file)
     ok = {a: w for a, w in cfg["aspects"].items() if fits(sw, sh, a, gt_short, scale)}
-    want = rng.choice(list(cfg["aspects"]), p=np.array(list(cfg["aspects"].values())) / sum(cfg["aspects"].values()))
+    want = pick(rng, cfg["aspects"])
     layout = None
     if want == "9:16" and sw > sh and rng.random() < cfg["portrait_layout_prob"]:
-        lay = cfg["portrait_layouts"]                 # a landscape clip in a portrait layout, at the real layout rate
-        layout = rng.choice(list(lay), p=np.array(list(lay.values())) / sum(lay.values()))
+        layout = pick(rng, cfg["portrait_layouts"])         # a landscape clip in a portrait layout, at the real rate
     elif want not in ok:
         if not ok:
             return None
-        want = rng.choice(list(ok), p=np.array(list(ok.values())) / sum(ok.values()))
-    src_shake = getattr(clip, "src_shake", np.nan)
-    src_pan = getattr(clip, "src_pan", np.nan)
-    if np.isnan(src_shake):                                   # no gate measurement: fall back to the metadata
-        src_shake, src_pan = (0.05, 1.0) if is_static(clip) else (1.0, 10.0)
-    target = float(rng.choice(cfg["_real_shake"]))
-    amp = np.sqrt(max(target ** 2 - src_shake ** 2, 0)) / SHAKE_GAIN
-    cam = {"shake_prob": 1.0, "shake_rms": [amp, amp]} if amp > 0.03 else {"shake_prob": 0.0}
-    if src_pan > 3:
-        cam["drift_prob"] = 0.0
-    shots, transitions, used, src_pos = [], [], 0, 0.0
+        want = pick(rng, ok)
+    fill = (lambda w, h: w > h) if layout else (lambda w, h: fits(w, h, want, gt_short, scale))
+    extras = []
+    if rng.random() < cfg["multi_scene_prob"]:
+        extras = extra_scenes(rng, clips, clip, int(rng.integers(cfg["scenes"][0], cfg["scenes"][1] + 1)) - 1, fill,
+                              cfg["same_source_prob"])
+    scenes = []
+    for i, c in enumerate([clip] + extras):
+        c_fps, c_nb = (src_fps, nb) if i == 0 else probe(c.file)[2:]
+        c_nb = c_nb or c.frames
+        cam, target, src_shake = camera_for(rng, c, cfg)
+        scenes.append({"clip": c, "fps": c_fps, "nb": c_nb, "pos": 0.0 if i == 0 else float(rng.uniform(0, 0.3) * c_nb),
+                       "cam": cam, "target": target, "src_shake": src_shake, "zoomed": rng.random() < 0.5, "done": False})
+    total = min(max_frames, int(0.85 * sum(sc["nb"] * fps / sc["fps"] for sc in scenes)))
+    shots, transitions, used = [], [], 0
+    still_pool = card_pool = None
+    if stills is not None:
+        still_pool = stills[stills.theme.isin(STILL_THEMES.get(clip.category) or THEME_STILLS.get(theme, []))]
+        card_pool = stills[stills.theme.isin(THEME_STILLS.get(theme, PRODUCT_STILLS))]
+        card_pool = card_pool if len(card_pool) else stills[stills.theme.isin(PRODUCT_STILLS)]
 
-    def video_shot(start, n, zoom, c=clip, c_fps=None):
-        s = {"kind": "video", "src": c.file, "clip_id": c.clip_id, "source_id": c.youtube_id,
-             "category": c.category, "src_fps": float(c_fps or fps), "start": int(start), "frames": int(n), "camera": cam}
+    def video_shot(sc, start, n, zoom, c=None, c_fps=None):
+        c = sc["clip"] if c is None else c
+        s = {"kind": "video", "src": c.file, "clip_id": c.clip_id, "source_id": c.youtube_id, "category": c.category,
+             "src_fps": float(c_fps or sc["fps"]), "start": int(start), "frames": int(n), "camera": sc["cam"]}
         if zoom > 1:
             s["zoom"] = float(zoom)
         return s
 
+    def still_src(pool=None):
+        pool = still_pool if pool is None else pool
+        if pool is None or not len(pool):
+            return None
+        st = pool.iloc[int(rng.integers(len(pool)))]
+        return f"unsplash:{st.photo_id}|{st.photo_image_url}|{st.photo_width}x{st.photo_height}"
+
+    def card(role, n, text=None, image_prob=0.0):
+        s = {"kind": "slide", "role": role, "frames": int(n), "palette": palette, "brand": brand, "theme": theme}
+        if text:
+            s["text"] = text
+        if rng.random() < image_prob and (img := still_src(card_pool)):
+            s["image"] = img
+        return s
+
     if rng.random() < cfg["hook_slide_prob"]:
         n = int(rng.integers(20, 45))
-        shots.append({"kind": "slide", "frames": n, "text": str(rng.choice(HOOKS))})
+        shots.append({"kind": "slide", "role": "hook", "frames": n, "text": str(rng.choice(HOOKS))})
         used += n
-    end_card = int(rng.integers(20, 45)) if rng.random() < cfg.get("end_card_prob", 0) else 0     # CTA card at the end
+    end_card = int(rng.integers(30, 60)) if rng.random() < cfg["end_card_prob"] else 0
     total -= end_card
-    zoomed = rng.random() < 0.5
     p_screen = cfg["screen_ad_prob"] * (4 if theme == "tech_app" else 1)          # app ads are mostly screen recordings
     screen_ad = want == "9:16" and screens is not None and len(screens) and rng.random() < p_screen
     n_exp = max(int(total / np.median(lengths)), 2)                # expected number of shots
     screen_at = set(rng.choice(n_exp, size=min(int(rng.integers(1, 3)), n_exp), replace=False).tolist()) if screen_ad else set()
+    card_at = int(rng.integers(1, n_exp)) if rng.random() < cfg["card_prob"] else -1
+    collage = []
+    if want == "9:16" and not layout and rng.random() < cfg["collage_prob"]:
+        cw, ch = gt_geometry("9:16", gt_short, scale)[:2]
+        collage = extra_scenes(rng, clips, clip, 3, lambda w, h: min(w, h) >= min(cw, ch) // 2, 0.3)
+    collage_at = int(rng.integers(0, n_exp)) if len(collage) == 3 else -1
+    cur, left = 0, int(rng.integers(1, 4))
     while used < total:
+        live = [i for i, sc in enumerate(scenes) if not sc["done"]]
+        if not live:
+            break
+        if cur not in live or left <= 0:                       # next scene (A-roll / B-roll), 1-3 shots each
+            cur = live[(live.index(cur) + 1) % len(live)] if cur in live else live[0]
+            left = int(rng.integers(1, 4))
+        sc = scenes[cur]
         n = int(min(rng.choice(lengths), total - used))
         if n < 10:
             break
-        src_frames = n * fps / SEQ_FPS
-        if src_pos + src_frames > (nb or clip.frames) - 2:
-            break
-        zoom = float(rng.uniform(*cfg["punch_in_zoom"])) if (zoomed and rng.random() < cfg["punch_in_prob"] * 2) else 1.0
-        if len(shots) in screen_at:
-            sc = {"kind": "screen", "src": str(screens[int(rng.integers(len(screens)))]), "frames": n}
-            s = ({"kind": "layout", "layout": "pip", "frames": n, "parts": [sc, video_shot(src_pos, n, 1.0)]}
-                 if clip.category == "talking_head" and rng.random() < cfg["screen_pip_prob"] else sc)
+        src_frames = n * sc["fps"] / fps
+        if sc["pos"] + src_frames > sc["nb"] - 2:
+            sc["done"], left = True, 0
+            continue
+        zoom = float(rng.uniform(*cfg["punch_in_zoom"])) if (sc["zoomed"] and rng.random() < cfg["punch_in_prob"] * 2) else 1.0
+        k = len(shots)
+        if k in screen_at:
+            scr = {"kind": "screen", "src": str(screens[int(rng.integers(len(screens)))]), "frames": n}
+            r = rng.random()
+            if clip.category == "talking_head" and r < cfg["screen_pip_prob"]:
+                s = {"kind": "layout", "layout": "pip", "frames": n, "parts": [scr, video_shot(sc, sc["pos"], n, 1.0)]}
+            elif r < cfg["screen_pip_prob"] + cfg["screen_phone_prob"]:
+                behind = [video_shot(sc, sc["pos"], n, 1.0)] if not layout and rng.random() < 0.5 else []
+                s = {"kind": "layout", "layout": "phone", "frames": n, "palette": palette, "parts": [scr] + behind}
+            else:
+                s = scr
+        elif k == card_at:
+            s = card("card", min(max(n, int(rng.integers(40, 80))), total - used), image_prob=0.8)
+            n = s["frames"]
+        elif k == collage_at:
+            parts = [video_shot(sc, sc["pos"], n, 1.0)]
+            for c in collage:
+                c_fps = probe(c.file)[2]
+                parts.append(video_shot(sc, rng.uniform(0, max(c.frames - n * c_fps / fps - 2, 0)), n, 1.0, c, c_fps))
+            s = {"kind": "layout", "layout": "grid4", "frames": n, "parts": parts}
         elif layout:
-            other = max(0.0, (nb or clip.frames) - src_pos - 2 * src_frames)
-            parts = [video_shot(src_pos, n, zoom)]
+            parts = [video_shot(sc, sc["pos"], n, zoom)]
             if layout in ("split", "duet"):
-                oc = other_clip(rng, clips, clip)
+                oc = other_clip(rng, clips, sc["clip"])
                 if oc is not None:
                     o_fps = probe(oc.file)[2]
-                    o_room = max(oc.frames - n * o_fps / SEQ_FPS - 2, 0)
-                    parts.append(video_shot(rng.uniform(0, o_room), n, 1.0, oc, o_fps))
+                    o_room = max(oc.frames - n * o_fps / fps - 2, 0)
+                    parts.append(video_shot(sc, rng.uniform(0, o_room), n, 1.0, oc, o_fps))
                 else:
-                    parts.append(video_shot(src_pos + rng.uniform(0, other) if other else src_pos, n, 1.0))
-            s = {"kind": "layout", "layout": str(layout), "frames": n, "parts": parts}
-        elif (stills is not None and rng.random() < cfg["still_prob"] and shots
-              and len(pool := stills[stills.theme.isin(STILL_THEMES.get(clip.category, []))])):
-            st = pool.iloc[int(rng.integers(len(pool)))]
-            s = {"kind": "still", "src": f"unsplash:{st.photo_id}|{st.photo_image_url}", "frames": n}
-        elif rng.random() < cfg["pip_prob"] and shots and (oc := other_clip(rng, clips, clip, "talking_head")) is not None:
+                    other = max(0.0, sc["nb"] - sc["pos"] - 2 * src_frames)
+                    parts.append(video_shot(sc, sc["pos"] + rng.uniform(0, other) if other else sc["pos"], n, 1.0))
+            s = {"kind": "layout", "layout": str(layout), "frames": n, "parts": parts, "palette": palette}
+        elif shots and rng.random() < cfg["still_prob"] and (img := still_src()):
+            s = {"kind": "still", "src": img, "frames": n}
+        elif rng.random() < cfg["pip_prob"] and shots and (oc := other_clip(rng, clips, sc["clip"], "talking_head")) is not None:
             o_fps = probe(oc.file)[2]
             s = {"kind": "layout", "layout": "pip", "frames": n,
-                 "parts": [video_shot(src_pos, n, zoom),
-                           video_shot(rng.uniform(0, max(oc.frames - n * o_fps / SEQ_FPS - 2, 0)), n, 1.0, oc, o_fps)]}
+                 "parts": [video_shot(sc, sc["pos"], n, zoom),
+                           video_shot(sc, rng.uniform(0, max(oc.frames - n * o_fps / fps - 2, 0)), n, 1.0, oc, o_fps)]}
         else:
-            s = video_shot(src_pos, n, zoom)
+            s = video_shot(sc, sc["pos"], n, zoom)
         if shots:
-            if rng.random() < cfg["jump_cut_prob"]:
-                kind, k = "cut", 0
+            if s.get("kind") == "video" and shots[-1].get("clip_id") == s["clip_id"] and rng.random() < cfg["jump_cut_prob"]:
+                kind, t = "cut", 0                              # jump cut within a scene
             else:
-                tr = cfg["transitions"]
-                kind = rng.choice(list(tr), p=np.array(list(tr.values())) / sum(tr.values()))
-                k = int(rng.integers(*cfg["transition_frames"][kind])) if kind != "cut" else 0
-                k = min(k, n - 4, shots[-1]["frames"] - 4) if k else 0
-            transitions.append({"type": str(kind) if k > 0 else "cut", "frames": max(k, 0)})
+                kind = pick(rng, cfg["transitions"])
+                t = int(rng.integers(*cfg["transition_frames"][kind])) if kind != "cut" else 0
+                t = min(t, n - 4, shots[-1]["frames"] - 4) if t else 0
+            transitions.append({"type": str(kind) if t > 0 else "cut", "frames": max(t, 0)})
             used -= transitions[-1]["frames"] if kind == "dissolve" else 0
         shots.append(s)
         used += n
-        src_pos += src_frames + (rng.uniform(*cfg["jump_skip_s"]) * fps if rng.random() < cfg["jump_cut_prob"] else 0)
-        zoomed = not zoomed
+        sc["pos"] += src_frames + (rng.uniform(*cfg["jump_skip_s"]) * sc["fps"] if rng.random() < cfg["jump_cut_prob"] else 0)
+        sc["zoomed"] = not sc["zoomed"]
+        left -= 1
     if not shots or sum(1 for s in shots if s["kind"] != "slide") == 0:
         return None
     if end_card:
-        transitions.append({"type": "cut", "frames": 0})
-        shots.append({"kind": "slide", "frames": end_card, "text": str(rng.choice(CTAS))})
+        transitions.append({"type": pick(rng, {"cut": 0.7, "dissolve": 0.3}) if end_card > 20 else "cut", "frames": 0})
+        if transitions[-1]["type"] == "dissolve":
+            transitions[-1]["frames"] = int(min(rng.integers(4, 10), shots[-1]["frames"] - 4))
+            used -= transitions[-1]["frames"]
+        shots.append(card("end", end_card, text=str(rng.choice(CTAS)), image_prob=0.4))
         used += end_card
-    plan = {"aspect": str(want), "shots": shots, "transitions": transitions, "frames": used, "portrait_layout": layout,
-            "shake_target": round(target, 3), "src_shake": round(float(src_shake), 3)}
-    return plan
+    return {"aspect": str(want), "shots": shots, "transitions": transitions, "frames": used, "portrait_layout": layout,
+            "scenes": len(scenes), "shake_target": round(scenes[0]["target"], 3), "src_shake": round(scenes[0]["src_shake"], 3)}
 
 
 def main():
@@ -248,6 +371,8 @@ def main():
     ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.hq.gate); clips must pass")
     ap.add_argument("--stills", help="stills table (data/stats/hq/content_unsplash.csv)")
     ap.add_argument("--screens", help="UI screen manifest (data/hq/ui_screens/manifest.csv), for screen-recording shots")
+    ap.add_argument("--source-text", nargs="*", default=[],
+                    help="source_text.csv of adup.hq.source_text: ads using clips with burned-in text get no captions")
     ap.add_argument("--gt-short", type=int, default=1080)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--max-frames", type=int, default=150)
@@ -261,8 +386,9 @@ def main():
     add_config_args(ap)
     args = ap.parse_args()
     config = load_config(args.config, args.set)
-    cfg = {**config["ugc"]["director"], "_real_shake": real_shake()}
+    dcfg = config["ugc"]["director"]
     rng = np.random.default_rng(args.seed)
+    shake = real_shake()
 
     clips = pd.concat([pd.read_csv(m) for m in args.clips], ignore_index=True)
     clips = clips[clips.file.map(os.path.exists)]
@@ -281,7 +407,7 @@ def main():
     if args.stills:
         stills = pd.read_csv(args.stills)
         stills = stills[stills.theme != "other"]
-    ratios = config["ugc"]["director"]["split"]
+    ratios = dcfg["split"]
     clips["split"] = clips.youtube_id.map(lambda k: split_of(k, ratios))
     if stills is not None:
         stills["split"] = stills.photo_id.map(lambda k: split_of(k, ratios))
@@ -289,7 +415,6 @@ def main():
         clips = clips[clips.split == args.only_split]
     if args.limit:
         clips = clips.sample(min(args.limit, len(clips)), random_state=args.seed)
-    lengths = shot_lengths()
     screens = None
     if args.screens:
         sm = pd.read_csv(args.screens)
@@ -301,8 +426,9 @@ def main():
     n_out = 0
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     clips = clips.reset_index(drop=True)
+    w, themes = theme_weights(clips, dcfg["other_theme_share"])
+    clips["theme"] = themes if themes is not None else "none"
     if args.n_ads:
-        w, themes = theme_weights(clips, cfg["other_theme_share"])
         picks, used_n = [], np.zeros(len(clips), int)
         while len(picks) < args.n_ads and (w > 0).any():
             i = int(rng.choice(len(clips), p=w / w.sum()))
@@ -311,22 +437,35 @@ def main():
             if used_n[i] >= args.max_per_clip:
                 w[i] = 0.0
         picks = np.array(picks)
-        if themes is not None:
-            print("ad themes drawn:", themes.iloc[picks].value_counts().to_dict())
-        order = [(clips.iloc[i], int((picks[:j] == i).sum()), themes.iloc[i] if themes is not None else None)
-                 for j, i in enumerate(picks)]
+        print("ad themes drawn:", clips.theme.iloc[picks].value_counts().to_dict())
+        order = [(clips.iloc[i], int((picks[:j] == i).sum())) for j, i in enumerate(picks)]
     else:
-        order = [(c, k, None) for c in clips.itertuples() for k in range(args.per_clip)]
+        order = [(c, k) for c in clips.itertuples() for k in range(args.per_clip)]
+    with_text = set()
+    for t in args.source_text:
+        d = pd.read_csv(t)
+        with_text |= set(d.file[d.has_text.astype(bool)])
+    styles = {}
     with open(args.out, "w") as f:
-        for clip, k, theme in order:
-            plan = plan_ad(rng, clip, clips, stills, lengths, cfg, args.gt_short, args.scale, args.max_frames, screens, theme)
+        for clip, k in order:
+            style = pick(rng, dcfg["styles"])
+            cfg = {**dcfg, **dcfg["style"][style], "_real_shake": shake}
+            fps = int(pick(rng, dcfg["fps"]))
+            theme = clip.theme if clip.theme not in ("none", "other", "talking_head") else None
+            brand = brand_name(random.Random(int(rng.integers(2 ** 31))))
+            palette = int(rng.integers(len(PALETTES)))
+            plan = plan_ad(rng, clip, clips, stills, cfg, args.gt_short, args.scale, args.max_frames, fps, screens, theme,
+                           brand, palette)
             if plan is None:
                 continue
-            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "split": clip.split, "fps": SEQ_FPS,
+            srcs = {p.get("src") for s in plan["shots"] for p in [s, *s.get("parts", [])]}
+            spec = {"id": f"ugc_{clip.clip_id.replace('.mp4', '')}_{k}", "purpose": "ugc", "split": clip.split, "fps": fps,
+                    "style": style, "theme": theme, "brand": brand, "palette": palette, "src_text": bool(srcs & with_text),
                     "pregated": bool(args.gate), **plan}
             f.write(json.dumps(spec) + "\n")
             n_out += 1
-    print(f"{n_out} ad specs from {len(clips)} clips -> {args.out}")
+            styles[style] = styles.get(style, 0) + 1
+    print(f"{n_out} ad specs from {len(clips)} clips -> {args.out}; styles {styles}")
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ assets/           字体、人脸检测模型
 
 每个视频目录里有 `manifest.csv`（素材清单，下载脚本写入）和 `gate_<GT 短边>.csv`（预筛结果，`adup/hq/gate.py`
 写入）。v7 用 `gate_1080.csv`：KwaiVIR 已跑（190 / 200 通过）；UltraVideo 4K / 8K 留给服务器。
+`source_text.csv`（`adup/hq/source_text.py`）标出本身带字幕的片段，编排时用 `--source-text` 读入：KwaiVIR 已跑，UltraVideo 留给服务器。
 
 ## stats/：测量表
 
@@ -53,6 +54,7 @@ assets/           字体、人脸检测模型
 | `real_ads/degradation.csv`、`quality.csv` | 真实广告的退化指标和质量分 | `analysis/degradation_stats.py`、`quality.py` | `analysis/compare.py`（校准） |
 | `real_ads/meta_streams.csv` | Meta 广告的码流信息（编码器、码率） | 一次性分析 | 文档 |
 | `real_ads/groups/` | 上面这些测量用到的广告列表 | | |
+| `real_ads/ad_anatomy.csv` | 48 条真实广告的人工标注：风格、画面形式、文字和图形元素（`docs/ugc_dataset.md` 1.3 节） | 人工 | 设计 `ugc.director.style` 和 `ugc.text.by_style` 的比例 |
 | `real_ads/splits.csv` | 每条真实广告属于 calibration / dev / test 哪一份（按广告 id 哈希，固定不变） | `real_ads/splits.py` | 校准只用 calibration，测试只用 test |
 | `real_ads/groups/<split>_{hd,sd}.txt` | 每一份的真实广告文件列表（HD：TikTok 和 Meta 720p；SD：Meta 360p） | `real_ads/splits.py` | 校准、基准的真实赛道 |
 | `hq/content_pool.csv` | UltraVideo 全部片段的主题（按文字描述） | `ugc_content.py pool` | `ugc/director.py` |
