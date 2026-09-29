@@ -139,14 +139,27 @@ def add_noise(x, p, nprng):
     """Gaussian (sigma in 0-255 units) or Poisson (Real-ESRGAN's scaled shot noise) noise, colour or gray."""
     h, w = x.shape[:2]
     if p["type"] == "gaussian":
+        # cv2.randn on an (h, w, 3) array puts a scalar sigma on the first channel only: draw a single-channel array
+        c = 1 if p["gray"] else 3
         cv2.setRNGSeed(int(nprng.integers(2 ** 31)))
-        n = np.empty((h, w, 1) if p["gray"] else (h, w, 3), np.float32)
+        n = np.empty((h, w * c), np.float32)
         cv2.randn(n, 0, p["level"])
+        n = n.reshape(h, w, c)
     else:
+        # Poisson(lam) - lam with lam = 256 * intensity: exact draws only where lam < 16 (dark pixels), elsewhere the
+        # normal approximation of the same variance (skew <= 0.25); numpy's Poisson sampler is ~10x slower per frame
         base = np.clip(x, 0, 255) / 255
         if p["gray"]:
             base = cv2.cvtColor(base.astype(np.float32), cv2.COLOR_RGB2GRAY)[..., None]
-        n = (nprng.poisson(base * 256) / 256 - base).astype(np.float32) * 255 * p["level"]
+        lam = (base * 256).astype(np.float32)
+        cv2.setRNGSeed(int(nprng.integers(2 ** 31)))
+        n = np.empty((lam.shape[0], lam.shape[1] * lam.shape[2]), np.float32)
+        cv2.randn(n, 0, 1)
+        n = n.reshape(lam.shape) * np.sqrt(lam)
+        dark = lam < 16
+        if dark.any():
+            n[dark] = nprng.poisson(lam[dark]) - lam[dark]
+        n *= 255 / 256 * p["level"]
     return x + n
 
 
@@ -163,6 +176,11 @@ class Stage:
     def __init__(self, p, in_size, nprng):
         self.p, self.nprng = p, nprng
         self.kernel = make_kernel(p["blur"]) if p.get("blur") else None
+        self.sep = None                                # rank-1 kernels (isotropic Gaussian): two 1-D passes, ~3x faster
+        if self.kernel is not None:
+            u, s, vt = np.linalg.svd(self.kernel.astype(np.float64))
+            if s[1] < 1e-7 * s[0]:
+                self.sep = ((u[:, 0] * np.sqrt(s[0])).astype(np.float32), (vt[0] * np.sqrt(s[0])).astype(np.float32))
         w, h = in_size
         r = p["resize"]
         self.out_size = (even(round(w * r["scale"])), even(round(h * r["scale"])))
@@ -173,7 +191,9 @@ class Stage:
         x = frame.astype(np.float32)
         if p.get("motion_blur", 0) > 0:
             x = motion_blur(x, vel[0], vel[1], p["motion_blur"])
-        if self.kernel is not None:
+        if self.sep is not None:
+            x = cv2.sepFilter2D(x, -1, self.sep[1], self.sep[0])
+        elif self.kernel is not None:
             x = cv2.filter2D(x, -1, self.kernel)
         if p.get("sharpen"):
             s = p["sharpen"]

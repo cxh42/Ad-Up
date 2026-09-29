@@ -36,6 +36,7 @@ import random
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
+import cv2
 import numpy as np
 import pandas as pd
 import yaml
@@ -150,14 +151,18 @@ def process_sequence(seq, out_dir, gt_short, scale, variants, seed, config, grid
                     w.write(j.result())
         for w in [gt_w, mask_w] + [w for _, w in stage1]:
             w.close()
-        for k, ((name, lq_short, codec), plan, (st, _), nprng, lq_size) in enumerate(
-                zip(vspecs, plans, stage1, nprngs, lq_sizes)):
-            out = os.path.join(out_dir, f"{name}.mp4")
-            vt = os.path.join(tmp, f"v{k}")
-            os.makedirs(vt)
-            info = finish(plan, os.path.join(tmp, f"s1_{k}.mkv"), st.out_size, out, lq_size, fps, n, nprng, vt)
-            meta["variants"].append({"name": name, "file": out, "lq_size": list(lq_size), "scale": gt_short / lq_short,
-                                     "codec": codec, "plan": plan, "stage1_size": list(st.out_size), **info})
+        # stage 2 and the final encode of every variant side by side (each has its own random stream)
+        with ThreadPoolExecutor(max_workers=min(len(vspecs), 4)) as pool:
+            jobs = []
+            for k, ((name, _, _), plan, (st, _), nprng, lq_size) in enumerate(zip(vspecs, plans, stage1, nprngs, lq_sizes)):
+                vt = os.path.join(tmp, f"v{k}")
+                os.makedirs(vt)
+                jobs.append(pool.submit(finish, plan, os.path.join(tmp, f"s1_{k}.mkv"), st.out_size,
+                                        os.path.join(out_dir, f"{name}.mp4"), lq_size, fps, n, nprng, vt))
+            for (name, lq_short, codec), plan, (st, _), lq_size, job in zip(vspecs, plans, stage1, lq_sizes, jobs):
+                meta["variants"].append({"name": name, "file": os.path.join(out_dir, f"{name}.mp4"),
+                                         "lq_size": list(lq_size), "scale": gt_short / lq_short, "codec": codec,
+                                         "plan": plan, "stage1_size": list(st.out_size), **job.result()})
 
     if len(shots) > 1:
         cuts = [a for a, _ in ranges[1:]]
@@ -226,6 +231,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     add_config_args(ap)
     args = ap.parse_args()
+    cv2.setNumThreads(4)          # variants already run side by side; 32 OpenCV threads each only add contention
     config = load_config(args.config, args.set)
     if not (args.out or args.sequences):
         ap.error("--out is required with --manifest")
