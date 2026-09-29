@@ -21,6 +21,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
   media.py                ffmpeg 读写、GT 几何（画幅、裁剪）、人脸检测
   make_pairs.py           生成配对的入口：specs.jsonl -> data/pairs/<数据集>/，串起 ugc/ 和 degrade/ 的各步
   memguard.py             内存看门狗：本机跑任务时统计峰值内存，可用内存低于阈值（默认 10 GB）就停掉任务
+  batch.py                无人值守地批量跑 make_pairs（configs/batches/*.yaml）：内存不足自动暂停再续跑，进度页和状态命令
 
   real_ads/            ①  采集真实广告（目标 LQ 域，只做统计和评测）            -> data/real_ads/
     tiktok_topads.py      TikTok Creative Center Top Ads

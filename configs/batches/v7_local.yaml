@@ -1,0 +1,21 @@
+# 本机能做的全部 v7 配对（2026-09-30）：现有 901 条素材，单进程，在 adup.memguard 下运行
+# 运行：nohup .venv-iqa/bin/python -m adup.batch run configs/batches/v7_local.yaml > /dev/null 2>&1 &
+# 进度：.venv-iqa/bin/python -m adup.batch status configs/batches/v7_local.yaml --watch 30，
+#       或浏览器打开 outputs/logs/batch_v7_local/status.html（每 30 秒自动刷新）
+min_free_gb: 10        # 可用内存低于这个值就暂停当前任务
+resume_free_gb: 14     # 暂停后等可用内存回到这个值再续跑
+tasks:
+  - name: train          # 1,119 条广告 × 2 个 LQ（重退化 10%）
+    specs: data/pairs/ugc_v7_train/specs.jsonl
+    args: [--scale, auto, --variants, "2", --no-shot-files]
+  - name: dev            # 50 条 × 8 个 LQ（270/360/540/720 × H.264/VP9，校准版退化）
+    specs: data/pairs/ugc_v7_dev/specs.jsonl
+    args: [--grid, --no-shot-files]
+  - name: test           # 100 条 × 8 个 LQ
+    specs: data/pairs/ugc_v7_test/specs.jsonl
+    args: [--grid, --no-shot-files]
+  - name: test_heavy     # 测试集前 50 条，同一 GT，网格全部用重退化
+    specs: data/pairs/ugc_v7_test/specs.jsonl
+    out: data/pairs/ugc_v7_test_heavy
+    limit: 50
+    args: [--grid, --no-shot-files, --set, degrade.grid.rbvsr_prob=1.0]

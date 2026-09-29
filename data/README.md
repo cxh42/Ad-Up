@@ -80,14 +80,18 @@ assets/           字体、人脸检测模型
     meta.json                      每一步的参数、镜头边界和来源、所属划分（train / dev / test）
 ```
 
-本机的配对数据只有展示用的小样本（2026-09-29，单进程、在 `adup.memguard` 下生成，峰值内存 3–6 GB）：
+本机的配对数据（展示样例 2026-09-29，单进程、在 `adup.memguard` 下生成，峰值内存 3–6 GB）：
 
 | 目录 | 内容 |
 |---|---|
 | `data/pairs/ugc_v7_examples/` | 36 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑：两种风格、横竖屏、24 / 25 / 30 fps、12 个广告主题、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材；退化按训练设置（72 个 LQ 里 3 个抽到重退化） |
 | `data/pairs/ugc_v7_examples_heavy/` | 其中 9 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
 | `data/pairs/ugc_v7_examples_grid/` | 3 条测试集广告按网格生成：同一 GT 的 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
-| `data/pairs/ugc_v7_{train,dev,test}/specs.jsonl` | 已编排、未生成：训练 1,000 条、开发 50 条、测试 100 条广告，在服务器上生成 |
+| `data/pairs/ugc_v7_train/` | 用现有全部素材编排的训练集：1,119 条广告 × 2 个 LQ（重退化 10%），每条素材最多出现 3 次 |
+| `data/pairs/ugc_v7_dev/`、`ugc_v7_test/` | 50 / 100 条广告，网格：每条 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
+| `data/pairs/ugc_v7_test_heavy/` | 测试集前 50 条的同一 GT，网格全部用重退化 |
+
+这四份由 `configs/batches/v7_local.yaml` 在本机批量生成（2026-09-30 开始，单进程约 12 小时）：`python -m adup.batch run configs/batches/v7_local.yaml` 运行或续跑，`python -m adup.batch status configs/batches/v7_local.yaml --watch 30` 或 `outputs/logs/batch_v7_local/status.html` 看进度。
 
 展示材料（`adup.analysis.showcase` 生成）在 `outputs/figures/examples/`，打开 `index.html` 可以在一页里看总览图、文字区域对比、
 重退化对比、网格对比和每条广告的 GT / LQ 并排视频。本机跑生成类任务都用 `python -m adup.memguard -- <命令>` 包一层：
