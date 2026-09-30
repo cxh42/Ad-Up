@@ -119,6 +119,8 @@ OCR 以后可以换更强的（如 PaddleOCR），减少它本身的误差。
 .venv-iqa/bin/python -m adup.bench.human_study build --segments data/eval_sets/real_ugc_v1 --runs outputs/bench/real_ugc_v1 \
     --methods bicubic realesrgan dove --anchor --out outputs/human_study/real_ugc_v1
 .venv-iqa/bin/python -m adup.bench.human_study serve outputs/human_study/real_ugc_v1      # 评分人打开它打印的网址
+#   本机开着 ufw 时，手机要先放行端口：sudo ufw allow 8765/tcp（评完 sudo ufw delete allow 8765/tcp）；
+#   后台运行：setsid nohup .venv-iqa/bin/python -m adup.bench.human_study serve outputs/human_study/real_ugc_v1 > outputs/logs/real_ugc_v1/serve.log 2>&1 &
 .venv-iqa/bin/python -m adup.bench.human_study analyze outputs/human_study/real_ugc_v1
 # 真实视频（整条广告）：跑方法，再做无参考打分和 360p→720p 半配对比较
 .venv-iqa/bin/python -m adup.bench.run --method dove --list data/stats/real_ads/groups/test_sd.txt --out outputs/bench/real_test
