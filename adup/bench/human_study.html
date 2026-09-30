@@ -32,7 +32,7 @@
   .switch button { min-width: 96px; font-weight: 700; }
   .switch button.on { background: var(--chosen); border-color: var(--chosen); }
   .q { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
-  .q h3 { font-size: 16px; margin: 0 0 8px; }
+  .q h2 { font-size: 16px; margin: 0 0 8px; }
   .opts { display: flex; flex-wrap: wrap; gap: 8px; }
   .opts button.sel { background: var(--chosen); border-color: var(--chosen); }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 14px 0 32px; flex-wrap: wrap; }
@@ -68,11 +68,11 @@
       <div class="hint" style="text-align:center">点画面也可以切换 A / B</div>
     </div>
 
-    <div class="q" data-q="choice"><h3>1. 哪个整体画质更好？</h3>
+    <div class="q" data-q="choice"><h2>1. 哪个整体画质更好？</h2>
       <div class="opts"><button data-v="left">A 更好</button><button data-v="right">B 更好</button></div></div>
-    <div class="q" data-q="text"><h3>2. 文字、价格、logo：有没有哪边看不清或内容被改了？</h3>
+    <div class="q" data-q="text"><h2>2. 文字、价格、logo：有没有哪边看不清或内容被改了？</h2>
       <div class="opts"><button data-v="left">A 有问题</button><button data-v="right">B 有问题</button><button data-v="both">两边都有</button><button data-v="none">都没问题</button><button data-v="na">画面里没有字</button></div></div>
-    <div class="q" data-q="face"><h3>3. 人脸看起来自然吗？</h3>
+    <div class="q" data-q="face"><h2>3. 人脸看起来自然吗？</h2>
       <div class="opts"><button data-v="left">A 不自然</button><button data-v="right">B 不自然</button><button data-v="both">两边都不自然</button><button data-v="none">都自然</button><button data-v="na">没有人脸</button></div></div>
 
     <div class="foot">
