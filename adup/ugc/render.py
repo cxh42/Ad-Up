@@ -13,7 +13,7 @@ Shot kinds (spec dicts from adup.ugc.director, or plain {"src", "start", "frames
   slide   a card made in an editor or a brand template (motion graphics): a solid / gradient background, optionally a
           product photo in a shape, and text elements animating in; role hook (one big line), card (photo + headline)
           or end (logo, tagline, photo, CTA button, fine print)
-  screen  a phone screen recording: a tall app page (adup.hq.ui_screens) scrolled by swipes and pauses;
+  screen  a phone screen recording: a tall app page (adup.sources.ui_screens) scrolled by swipes and pauses;
           offsets are whole pixels, so frames are exact copies of the rendered UI
 Text on slides is returned as `overlays` (text items, frames relative to the shot) for the frame-level text pass, so it
 is in mask.mkv and meta.json like every other overlay. Nothing is ever upscaled except the blurred backgrounds of
@@ -28,7 +28,7 @@ import cv2
 import numpy as np
 
 from adup.media import max_crop, place_crop, probe, read_frames, stream_frames
-from adup.paths import HQ, PROXY
+from adup.paths import PROXY, SOURCES
 from adup.ugc.camera import plan_camera, warp
 from adup.ugc.text import (
     FINE_PRINT,
@@ -48,7 +48,7 @@ from adup.ugc.text import (
     wrap,
 )
 
-STILLS = HQ / "unsplash_lite" / "images"          # Unsplash Lite photos, fetched on first use
+STILLS = SOURCES / "unsplash_lite" / "images"          # Unsplash Lite photos, fetched on first use
 
 
 def even(x):

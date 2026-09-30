@@ -12,10 +12,10 @@
 
 Usage (from the repo root):
   .venv-iqa/bin/python -m adup.analysis.ugc_content ads      data/stats/real_ads/content_ads.csv <videos...>
-  .venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/hq/content_pool.csv
-  .venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/hq/content_clips.csv <manifest.csv...>
-  .venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/hq/content_unsplash.csv
-  .venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/hq/content_coverage.csv
+  .venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/sources/content_pool.csv
+  .venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/sources/content_clips.csv <manifest.csv...>
+  .venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/sources/content_unsplash.csv
+  .venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/sources/content_coverage.csv
 Needs ALL_PROXY unset for the first weight download (httpx rejects socks:// proxies).
 """
 
@@ -29,7 +29,7 @@ import pandas as pd
 import torch
 from PIL import Image
 
-from adup.paths import HQ, POOL_TABLE, REAL_STATS, STILLS_TABLE
+from adup.paths import POOL_TABLE, REAL_STATS, SOURCES, STILLS_TABLE
 from adup.ugc.director import POOL_TO_AD
 
 FORMATS = {
@@ -233,7 +233,7 @@ def text_themes(enc, texts, min_sim):
 
 
 def tag_pool(out):
-    s = pd.read_csv(HQ / "ultravideo" / "short.csv", usecols=["clip_id", "url", "frame_width", "frame_height",
+    s = pd.read_csv(SOURCES / "ultravideo" / "short.csv", usecols=["clip_id", "url", "frame_width", "frame_height",
                                                              "total_frames", "fps", "Brief Description"])
     s = s[s.frame_width >= 3800].reset_index(drop=True)
     s["theme"], s["theme_sim"] = text_themes(mpnet_encoder(), s["Brief Description"].fillna("").tolist(), POOL_MIN_SIM)
@@ -242,7 +242,7 @@ def tag_pool(out):
 
 
 def tag_stills(out):
-    p = pd.read_csv(HQ / "unsplash_lite" / "photos.tsv000", sep="\t", low_memory=False,
+    p = pd.read_csv(SOURCES / "unsplash_lite" / "photos.tsv000", sep="\t", low_memory=False,
                     usecols=["photo_id", "photo_image_url", "photo_width", "photo_height", "photo_description",
                              "ai_description", "exif_camera_make"])
     p["orient"] = np.where(p.photo_height > p.photo_width * 1.05, "portrait",

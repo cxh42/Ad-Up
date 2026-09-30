@@ -17,8 +17,8 @@ and joins the factors from meta.json (LQ size, codec, preset, aspect, theme, spl
 adup.bench.run. Tables by method x LQ size and method x codec are printed; the rows go to --csv.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/ugc_v7_dev --runs outputs/bench/ugc_v7_dev \\
-      --methods bicubic realesrgan dove --csv outputs/bench/ugc_v7_dev/results.csv
+  .venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/v7_dev --runs outputs/bench/v7_dev \\
+      --methods bicubic realesrgan dove --csv outputs/bench/v7_dev/results.csv
 """
 
 import argparse

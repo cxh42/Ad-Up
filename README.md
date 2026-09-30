@@ -38,7 +38,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     eval_pairs.py         复原结果对 GT 的 PSNR / LPIPS，区分切换附近和其他帧
     calib_final.py        用 Meta 同一条广告的 720p / 360p 校准退化的最后一步（缩小 + 编码）
     showcase.py           展示用：配对样例的总览图、文字区域对比、重退化对比、网格对比、并排视频和本地网页
-  hq/                  ③  高质量素材（≥1080p 且真实清晰）                        -> data/hq/
+  sources/             ③  高质量素材（≥1080p 且真实清晰）                        -> data/sources/
     ultravideo.py         UltraVideo 4K/8K 片段，从远程 zip 中逐条取出
     ui_screens.py         合成手机 App 界面长截图（无头 Chrome，4 倍 / 6 倍像素），做录屏镜头的 GT
     kwaivir.py            KwaiVIR 训练集的 200 条高质量竖屏短视频（原生 1080×1920）做成素材清单
@@ -64,7 +64,7 @@ third_party/              上游仓库，以 git submodule 引入，不做修改
 docs/                     ugc_dataset.md（数据集流程与调研，先读这个）、benchmark.md（基准设计与运行）、ugc_degradations.md（真实退化与校准）、
                           hq_sources.md（高质量素材来源）
 requirements/             collect.txt（.venv）、ml.txt（.venv-iqa）、dove.txt（.venv-dove）
-data/        （不入库）   real_ads/  hq/  stats/  pairs/  benchmarks/  assets/，详见 data/README.md
+data/        （不入库）   sources/  real_ads/  stats/  pairs/  eval_sets/  assets/，详见 data/README.md
 outputs/     （不入库）   calibration/（合成数据的指标、校准分组）  bench/（基准输出和打分）  runs/（模型输出）  figures/  logs/
 ```
 
@@ -97,29 +97,29 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 .venv-iqa/bin/python -m adup.analysis.ugc_content   ads data/stats/real_ads/content_ads.csv <videos...>
 .venv-iqa/bin/python -m adup.analysis.text_overlay  tiktok_720p data/stats/real_ads/text_overlay.csv <videos...>
 
-# ③ 高质量素材 + 预筛 + 主题标签 -> data/hq/、data/stats/hq/
-.venv-iqa/bin/python -m adup.hq.ultravideo 300 --per-source 4 --kind both              # 4K -> data/hq/ultravideo/4k/
-.venv-iqa/bin/python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both   # 8K -> data/hq/ultravideo/8k/
-.venv/bin/python     -m adup.hq.ui_screens --n 300                                     # 录屏页面；--dpr 6 做 4K
-.venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --out data/hq/ultravideo/4k/gate_1080.csv
-.venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/hq/content_clips.csv data/hq/ultravideo/{4k,8k}/manifest.csv
-.venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/hq/content_pool.csv
-.venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/hq/content_unsplash.csv
-.venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/hq/content_coverage.csv
+# ③ 高质量素材 + 预筛 + 主题标签 -> data/sources/、data/stats/sources/
+.venv-iqa/bin/python -m adup.sources.ultravideo 300 --per-source 4 --kind both              # 4K -> data/sources/ultravideo/4k/
+.venv-iqa/bin/python -m adup.sources.ultravideo 1000 --per-source 10 --res 8k --kind both   # 8K -> data/sources/ultravideo/8k/
+.venv/bin/python     -m adup.sources.ui_screens --n 300                                     # 录屏页面；--dpr 6 做 4K
+.venv-iqa/bin/python -m adup.sources.gate --manifest data/sources/ultravideo/4k/manifest.csv --out data/sources/ultravideo/4k/gate_1080.csv
+.venv-iqa/bin/python -m adup.analysis.ugc_content clips    data/stats/sources/content_clips.csv data/sources/ultravideo/{4k,8k}/manifest.csv
+.venv-iqa/bin/python -m adup.analysis.ugc_content pool     data/stats/sources/content_pool.csv
+.venv-iqa/bin/python -m adup.analysis.ugc_content stills   data/stats/sources/content_unsplash.csv
+.venv-iqa/bin/python -m adup.analysis.ugc_content coverage data/stats/sources/content_coverage.csv
 
 # ④⑤ 编排 + 生成配对 -> data/pairs/<数据集>/（参数：configs/pairs/v7.yaml；GT 1080p，--scale auto 让 LQ 短边在 360/540/720 之间抽）
-.venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \
-    --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \
-    --screens data/hq/ui_screens/manifest.csv --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
-.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
+.venv-iqa/bin/python -m adup.ugc.director --clips data/sources/ultravideo/{4k,8k}/manifest.csv \
+    --gate data/sources/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/sources/content_unsplash.csv \
+    --screens data/sources/ui_screens/manifest.csv --n-ads 5000 --out data/pairs/v7_train/specs.jsonl
+.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_train/specs.jsonl --scale auto
 # 不经编排、每条素材直接做一个单镜头配对（对照用）
-.venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 --scale auto
+.venv-iqa/bin/python -m adup.make_pairs --manifest data/sources/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 --scale auto
 
 # 基准测试（详见 docs/benchmark.md）：dev / test 用 --grid 生成（尺寸 270/360/540/720 × 编码 H.264/VP9）
-.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7_dev/specs.jsonl --grid
-.venv-iqa/bin/python -m adup.bench.run --method dove --pairs data/pairs/ugc_v7_dev --out outputs/bench/ugc_v7_dev
-.venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/ugc_v7_dev --runs outputs/bench/ugc_v7_dev --methods bicubic dove \
-    --csv outputs/bench/ugc_v7_dev/results.csv
+.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_dev/specs.jsonl --grid
+.venv-iqa/bin/python -m adup.bench.run --method dove --pairs data/pairs/v7_dev --out outputs/bench/v7_dev
+.venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/v7_dev --runs outputs/bench/v7_dev --methods bicubic dove \
+    --csv outputs/bench/v7_dev/results.csv
 
 # 校准：给合成集打分（写到 outputs/calibration/），再和真实广告比较分布
 .venv-iqa/bin/python -m adup.analysis.degradation_stats <group> outputs/calibration/degradation.csv <videos...>
@@ -138,10 +138,10 @@ git clone --recurse-submodules <this repo>      # 已有的克隆：git submodul
 |---|---|---|
 | TikTok Top Ads | `data/real_ads/tiktok_topads/` | 广告主的素材。只用于分析和评测。 |
 | Meta 广告库 | `data/real_ads/meta_adlib_web/` | 广告主的素材。只用于分析和评测。 |
-| UltraVideo | `data/hq/ultravideo/` | CC-BY-4.0 + **仅限非商业研究**（素材来自 YouTube）。 |
-| Unsplash Lite | `data/hq/unsplash_lite/` | Unsplash Lite 许可，允许内部商用模型训练。 |
-| KwaiVIR（NTIRE 2026） | `data/benchmarks/KwaiVIR/` | 快手竖屏短视频修复基准，研究用途；1080x1920、6 秒、HEVC。 |
-| VideoLQ | `data/benchmarks/VideoLQ/` | 研究基准集。 |
+| UltraVideo | `data/sources/ultravideo/` | CC-BY-4.0 + **仅限非商业研究**（素材来自 YouTube）。 |
+| Unsplash Lite | `data/sources/unsplash_lite/` | Unsplash Lite 许可，允许内部商用模型训练。 |
+| KwaiVIR（NTIRE 2026） | `data/eval_sets/KwaiVIR/` | 快手竖屏短视频修复基准，研究用途；1080x1920、6 秒、HEVC。 |
+| VideoLQ | `data/eval_sets/VideoLQ/` | 研究基准集。 |
 
 Pexels、Pixabay 和 Mixkit 禁止脚本批量下载，Pexels 和 Pixabay 还明确禁止用于机器学习。
 商用训练需要自己拍摄、创作者授权或购买的素材。

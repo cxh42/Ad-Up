@@ -13,7 +13,7 @@ Inputs: a pairs directory (every LQ variant listed in its meta.json files; outpu
 text file listing videos (real ads; output name <file stem>.mp4).
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.bench.run --method bicubic --pairs data/pairs/ugc_v7_dev --out outputs/bench/ugc_v7_dev
+  .venv-iqa/bin/python -m adup.bench.run --method bicubic --pairs data/pairs/v7_dev --out outputs/bench/v7_dev
   .venv-iqa/bin/python -m adup.bench.run --method dove --list data/stats/real_ads/groups/dev_sd.txt --out outputs/bench/real_dev
 """
 

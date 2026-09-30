@@ -4,11 +4,11 @@ About 15% of the frames in real UGC ads are phone screen recordings, and no vide
 crisp vector text and shapes, so we render our own: random app pages (shopping grid, social feed, finance dashboard,
 chat, food delivery, fitness) as HTML, screenshotted by headless Chrome at a 360 px wide mobile viewport with a
 device scale factor of 4 -> 1440 px wide, full page (several screens tall). Product / feed pictures are Unsplash Lite
-photos (commercial-OK licence; themes from data/stats/hq/content_unsplash.csv). adup.ugc.render's "screen" shots
+photos (commercial-OK licence; themes from data/stats/sources/content_unsplash.csv). adup.ugc.render's "screen" shots
 scroll through these pages like a screen recording.
 
-Usage (from the repo root): .venv/bin/python -m adup.hq.ui_screens --n 40
-Output: data/hq/ui_screens/<id>.png and manifest.csv
+Usage (from the repo root): .venv/bin/python -m adup.sources.ui_screens --n 40
+Output: data/sources/ui_screens/<id>.png and manifest.csv
 """
 
 import argparse
@@ -22,9 +22,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from adup.paths import HQ, PROXY, ROOT, STILLS_TABLE
+from adup.paths import PROXY, ROOT, SOURCES, STILLS_TABLE
 
-OUT = HQ / "ui_screens"
+OUT = SOURCES / "ui_screens"
 FONTS = ["-apple-system, 'Helvetica Neue', Arial", "Roboto, Arial", "'Segoe UI', Arial", "Inter, Arial", "Georgia, serif"]
 ACCENTS = ["#fe2c55", "#1877f2", "#00b37e", "#ff6b00", "#7b3ff2", "#111111", "#e1306c", "#0a84ff", "#ffb800"]
 NAMES = ["Emma", "Liam", "Olivia", "Noah", "Ava", "Mia", "Lucas", "Sofia", "Ethan", "Chloe", "Maya", "Leo"]

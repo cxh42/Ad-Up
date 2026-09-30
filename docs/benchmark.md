@@ -83,15 +83,15 @@ OCR 以后可以换更强的（如 PaddleOCR），减少它本身的误差。
 
 ```bash
 # 合成 dev 集：编排 + 网格生成
-.venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv data/hq/kwaivir/manifest.csv \
-    --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv data/hq/kwaivir/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \
-    --screens data/hq/ui_screens/manifest.csv --only-split dev --n-ads 50 --out data/pairs/ugc_v7_dev/specs.jsonl
-.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7_dev/specs.jsonl --grid
+.venv-iqa/bin/python -m adup.ugc.director --clips data/sources/ultravideo/{4k,8k}/manifest.csv data/sources/kwaivir/manifest.csv \
+    --gate data/sources/ultravideo/{4k,8k}/gate_1080.csv data/sources/kwaivir/gate_1080.csv --stills data/stats/sources/content_unsplash.csv \
+    --screens data/sources/ui_screens/manifest.csv --only-split dev --n-ads 50 --out data/pairs/v7_dev/specs.jsonl
+.venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_dev/specs.jsonl --grid
 # 跑方法（每个方法一次）
-.venv-iqa/bin/python -m adup.bench.run --method dove --pairs data/pairs/ugc_v7_dev --out outputs/bench/ugc_v7_dev
+.venv-iqa/bin/python -m adup.bench.run --method dove --pairs data/pairs/v7_dev --out outputs/bench/v7_dev
 # 打分
-.venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/ugc_v7_dev --runs outputs/bench/ugc_v7_dev \
-    --methods bicubic lanczos realesrgan dove --csv outputs/bench/ugc_v7_dev/results.csv
+.venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/v7_dev --runs outputs/bench/v7_dev \
+    --methods bicubic lanczos realesrgan dove --csv outputs/bench/v7_dev/results.csv
 # 真实视频：跑方法，再做无参考打分和 360p→720p 半配对比较
 .venv-iqa/bin/python -m adup.bench.run --method dove --list data/stats/real_ads/groups/test_sd.txt --out outputs/bench/real_test
 .venv-iqa/bin/python -m adup.bench.evaluate_real --runs outputs/bench/real_test --methods bicubic dove --split test \

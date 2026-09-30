@@ -69,7 +69,7 @@ PALETTES = [((225, 20, 40), WHITE, WHITE), ((40, 200, 210), WHITE, WHITE), ((245
             ((18, 18, 18), (220, 190, 120), WHITE), ((20, 110, 70), (255, 230, 120), WHITE), ((255, 215, 0), (20, 20, 20), (20, 20, 20)),
             ((15, 30, 70), (80, 200, 255), WHITE), ((235, 225, 210), (90, 60, 40), (60, 40, 30)), ((250, 250, 250), (46, 170, 90), (30, 30, 30))]
 
-# real-ad folders (Meta search query / TikTok industry) -> ad themes of data/stats/hq/content_coverage.csv
+# real-ad folders (Meta search query / TikTok industry) -> ad themes of data/stats/sources/content_coverage.csv
 FOLDER_THEME = {
     "app": "tech_app", "apps": "tech_app", "games": "tech_app", "mobile_game": "tech_app", "headphones": "tech_app",
     "phone_case": "tech_app", "tech_electronics": "tech_app", "makeup": "beauty", "skincare": "beauty", "haircare": "beauty",
@@ -622,7 +622,7 @@ def plan_text(n, fps, W, H, rng, config, style="ugc", theme=None, brand=None, pa
               src_text=False):
     """Decide and pre-render every text item for an n-frame W x H ad of the given style. cuts: frames where shots
     start (per-shot headlines and prices); quiet: frame ranges without overlays; src_text: the footage already has
-    burned-in captions (adup.hq.source_text), so no captions, headlines or native text are added. Returns (items, meta
+    burned-in captions (adup.sources.source_text), so no captions, headlines or native text are added. Returns (items, meta
     for meta.json)."""
     p = {k: v for k, v in config["by_style"][style].items() if not src_text or k in SOURCE_TEXT_FREE}
     brand = brand or brand_name(rng)

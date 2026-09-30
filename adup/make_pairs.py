@@ -7,7 +7,7 @@ sections gt / ugc / degrade). Everything streams frame by frame, so 2K / 4K GT a
 Per ad (random parameters are drawn once per LQ variant and held fixed over the ad):
   GT        1. geometry: aspect ratio from the spec, GT short side --gt-short (1080 = 1920x1080 / 1080x1920, never
                upscaled), LQ size from --scale (a factor, or "auto": LQ short side drawn from degrade.lq_short)
-            2. gate (hq/gate.py) unless the spec's clips were pre-gated
+            2. gate (sources/gate.py) unless the spec's clips were pre-gated
             3. render each shot (ugc/render.py: face-aware crop, virtual handheld camera, layouts, stills, slides,
                screen recordings) and join them with transitions (ugc/sequence.py)
             4. burned-in text and graphics by the ad's style: captions, headlines, native text, prices, logo, CTA
@@ -23,9 +23,9 @@ multi-shot ads also get shots/shot_<i>_{gt,lq_<k>}.mp4 (frame-exact, lossless) a
 source and boundaries.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto --no-shot-files
-  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7_test/specs.jsonl --grid
-  .venv-iqa/bin/python -m adup.make_pairs --manifest data/hq/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 \
+  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_train/specs.jsonl --scale auto --no-shot-files
+  .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_test/specs.jsonl --grid
+  .venv-iqa/bin/python -m adup.make_pairs --manifest data/sources/ultravideo/4k/manifest.csv --out data/pairs/plain_1080 \
       --scale auto
 """
 
@@ -43,8 +43,8 @@ import yaml
 
 from adup.config import add_config_args, load_config
 from adup.degrade.second_order import finish, sample_plan, stage1_writer
-from adup.hq.gate import crop_filter, gate_ok, gate_stats
 from adup.media import GT_H264, Writer, feasible_aspects, gt_geometry, probe, split_at
+from adup.sources.gate import crop_filter, gate_ok, gate_stats
 from adup.ugc.render import ShotRenderer
 from adup.ugc.sequence import sequence_frames, shot_ranges
 from adup.ugc.text import draw_mask, draw_text, item_meta, plan_text, shift

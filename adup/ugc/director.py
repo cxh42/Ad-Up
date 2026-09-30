@@ -23,7 +23,7 @@ Then, for the ad's main HQ clip:
     face in a corner or inside a phone frame
   - transitions mostly hard cuts, otherwise dissolve / whip / dip (rendered by adup.ugc.sequence)
 Each ad also gets a made-up brand name and a brand palette, shared by its logo, cards and CTA button. Text overlays are
-sampled later by adup.make_pairs from the ad's style and theme. Only clips that passed the GT gate (adup.hq.gate,
+sampled later by adup.make_pairs from the ad's style and theme. Only clips that passed the GT gate (adup.sources.gate,
 --gate) are used. All knobs are in config section ugc.director (configs/pairs/<version>.yaml).
 
 Train / dev / test are separated by source before composition (ugc.director.split): every clip gets the split of its
@@ -31,17 +31,17 @@ source video (UltraVideo's YouTube id, hashed), stills and screens get one from 
 material of its own split. Each spec carries its "split".
 
 With --n-ads, clips are drawn with probability proportional to (share of the clip's theme in real ads) / (number of
-clips of that theme), so the dataset's content follows real UGC ads (data/stats/hq/content_coverage.csv) instead of
+clips of that theme), so the dataset's content follows real UGC ads (data/stats/sources/content_coverage.csv) instead of
 the HQ pool (UltraVideo is mostly food and scenery); clips of non-ad themes get a small weight. Clips are only ~5 s
 long, so another ad from the same clip mostly repeats its pixels: a clip is the main clip of at most --max-per-clip
 ads and appears in at most --max-uses ads in any role (extra scene, split / collage / pip part).
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.ugc.director --clips data/hq/ultravideo/{4k,8k}/manifest.csv \\
-      --gate data/hq/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/hq/content_unsplash.csv \\
-      --screens data/hq/ui_screens/manifest.csv --source-text data/hq/kwaivir/source_text.csv \\
-      --n-ads 5000 --out data/pairs/ugc_v7/specs.jsonl
-Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/ugc_v7/specs.jsonl --scale auto
+  .venv-iqa/bin/python -m adup.ugc.director --clips data/sources/ultravideo/{4k,8k}/manifest.csv \\
+      --gate data/sources/ultravideo/{4k,8k}/gate_1080.csv --stills data/stats/sources/content_unsplash.csv \\
+      --screens data/sources/ui_screens/manifest.csv --source-text data/sources/kwaivir/source_text.csv \\
+      --n-ads 5000 --out data/pairs/v7_train/specs.jsonl
+Then: .venv-iqa/bin/python -m adup.make_pairs --sequences data/pairs/v7_train/specs.jsonl --scale auto
 """
 
 import argparse
@@ -55,14 +55,14 @@ import numpy as np
 import pandas as pd
 
 from adup.config import add_config_args, load_config
-from adup.media import fits, gt_geometry, probe
+from adup.media import fits, gt_geometry, max_crop, probe
 from adup.paths import (
     CLIPS_TABLE,
     COVERAGE_TABLE,
-    HQ,
     LOOK_TABLE,
     POOL_TABLE,
     SHOTS_TABLE,
+    SOURCES,
 )
 from adup.ugc.text import CTAS, HOOKS, PALETTES, brand_name
 
@@ -244,6 +244,8 @@ def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, scr
     still_pool = card_pool = None
     if stills is not None:
         still_pool = stills[stills.theme.isin(STILL_THEMES.get(clip.category) or THEME_STILLS.get(theme, []))]
+        gw, gh = gt_geometry(want, gt_short, scale)[:2]           # full-frame still shots: the photo must cover the frame
+        still_pool = still_pool[[max_crop(w, h, gw, gh)[0] >= gw for w, h in zip(still_pool.photo_width, still_pool.photo_height)]]
         card_pool = stills[stills.theme.isin(THEME_STILLS.get(theme, PRODUCT_STILLS))]
         card_pool = card_pool if len(card_pool) else stills[stills.theme.isin(PRODUCT_STILLS)]
 
@@ -375,12 +377,12 @@ def plan_ad(rng, clip, clips, stills, cfg, gt_short, scale, max_frames, fps, scr
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clips", nargs="+", required=True, help="HQ clip manifests (data/hq/*/manifest.csv)")
-    ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.hq.gate); clips must pass")
-    ap.add_argument("--stills", help="stills table (data/stats/hq/content_unsplash.csv)")
-    ap.add_argument("--screens", help="UI screen manifest (data/hq/ui_screens/manifest.csv), for screen-recording shots")
+    ap.add_argument("--clips", nargs="+", required=True, help="HQ clip manifests (data/sources/*/manifest.csv)")
+    ap.add_argument("--gate", nargs="*", default=[], help="gate CSVs (adup.sources.gate); clips must pass")
+    ap.add_argument("--stills", help="stills table (data/stats/sources/content_unsplash.csv)")
+    ap.add_argument("--screens", help="UI screen manifest (data/sources/ui_screens/manifest.csv), for screen-recording shots")
     ap.add_argument("--source-text", nargs="*", default=[],
-                    help="source_text.csv of adup.hq.source_text: ads using clips with burned-in text get no captions")
+                    help="source_text.csv of adup.sources.source_text: ads using clips with burned-in text get no captions")
     ap.add_argument("--gt-short", type=int, default=1080)
     ap.add_argument("--scale", type=float, default=2.0)
     ap.add_argument("--max-frames", type=int, default=150)
@@ -410,7 +412,7 @@ def main():
         mo = g[g["pass"]].groupby("file")[["src_shake", "src_pan"]].median() if "src_shake" in g else None
         if mo is not None:
             clips = clips.merge(mo, left_on="file", right_index=True, how="left")
-    short = HQ / "ultravideo" / "short.csv"
+    short = SOURCES / "ultravideo" / "short.csv"
     if short.exists():
         cm = pd.read_csv(short, usecols=["clip_id", "Camera Movement"]).rename(columns={"Camera Movement": "camera_movement"})
         clips = clips.merge(cm, on="clip_id", how="left")

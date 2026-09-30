@@ -11,7 +11,7 @@ import sys
 import pandas as pd
 from scipy.stats import wasserstein_distance
 
-from adup.paths import BENCHMARK_STATS, CALIBRATION, REAL_STATS
+from adup.paths import CALIBRATION, EVAL_STATS, REAL_STATS
 
 METRICS = ["bpp", "bitrate_kbps", "blockiness", "noise_sigma", "overshoot", "downup_x1.5", "downup_x2", "downup_x3",
            "dover", "dover_tech", "clipiqa", "musiq"]
@@ -36,5 +36,5 @@ def main(real, synth, csvs):
 
 
 if __name__ == "__main__":
-    tables = [d / f for d in (REAL_STATS, BENCHMARK_STATS, CALIBRATION) for f in ("degradation.csv", "quality.csv")]
+    tables = [d / f for d in (REAL_STATS, EVAL_STATS, CALIBRATION) for f in ("degradation.csv", "quality.csv")]
     main(sys.argv[1], sys.argv[2], sys.argv[3:] or [str(t) for t in tables if t.exists()])

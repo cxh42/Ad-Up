@@ -4,7 +4,7 @@
 #   gt       GT 选取：预筛门槛、单片段模式的画幅
 #   ugc      把高质量素材做成"像真实 UGC 广告"的 GT：编排、虚拟手持相机、烧录文字（GT 和 LQ 都有）
 #   degrade  GT -> LQ：Real-ESRGAN / RealBasicVSR 式二阶退化（adup/degrade/second_order.py）
-# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director）、adup.hq.gate（gt）。
+# 读取方：adup.make_pairs（全部）、adup.ugc.director（ugc.director）、adup.sources.gate（gt）。
 # 每条配对的 meta.json 记录实际抽到的参数；数据集目录下的 config.yaml 是生成时用的这份。
 # 临时改参数不用复制文件：--set degrade.rbvsr_prob=0.2
 #

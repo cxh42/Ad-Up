@@ -11,8 +11,8 @@ grid examples (make_pairs --grid: 4 LQ sizes x 2 codecs). Outputs in --out:
   index.html                 all of the above on one page (open locally; paths are relative)
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.analysis.showcase --pairs data/pairs/ugc_v7_examples \\
-      --heavy data/pairs/ugc_v7_examples_heavy --grid data/pairs/ugc_v7_examples_grid --out outputs/figures/examples
+  .venv-iqa/bin/python -m adup.analysis.showcase --pairs data/pairs/examples/main \\
+      --heavy data/pairs/examples/heavy --grid data/pairs/examples/grid --out outputs/figures/examples
 """
 
 import argparse

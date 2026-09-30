@@ -2,11 +2,12 @@
 
 The layout follows the pipeline (see README.md and data/README.md):
 
-  data/real_ads    real ads (TikTok / Meta): the real-world LQ domain; measured, never trained on
-  data/hq          GT sources (sharp at 1080p); each clip directory holds its manifest.csv and gate_<gt_short>.csv
-  data/benchmarks  public datasets (KwaiVIR, VideoLQ)
-  data/stats       measurement tables the pair pipeline reads (real-ad targets, HQ-pool content tags)
-  data/pairs       generated (GT, LQ) datasets, one directory per dataset
+  data/sources     GT sources (sharp at 1080p): UltraVideo, KwaiVIR's HQ clips, photos, UI screens; each clip
+                   directory holds its manifest.csv, gate_<gt_short>.csv and source_text.csv
+  data/real_ads    real ads (TikTok / Meta): the real-world LQ domain; measured and evaluated on, never trained on
+  data/pairs       generated (GT, LQ) datasets, one directory per dataset (v7_train, v7_dev, ..., examples/)
+  data/stats       measurement tables the pair pipeline reads (real-ad targets, source content tags)
+  data/eval_sets   public evaluation sets, evaluated on only (KwaiVIR's LQ videos, VideoLQ)
   data/assets      fonts and small models
   outputs/         calibration reports, model runs, figures, logs
 """
@@ -19,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # ---------------------------------------------------------------- data (not in git)
 DATA = ROOT / "data"
 REAL_ADS = DATA / "real_ads"          # <scraper>/<date>/{videos/, summary.csv, shots/}
-HQ = DATA / "hq"                      # ultravideo/{4k,8k}/  unsplash_lite/  ui_screens/
-BENCHMARKS = DATA / "benchmarks"      # KwaiVIR/  VideoLQ/
+SOURCES = DATA / "sources"            # ultravideo/{4k,8k}/  kwaivir/clips/  unsplash_lite/  ui_screens/
+EVAL_SETS = DATA / "eval_sets"        # KwaiVIR/{wild, val_input, test_data, shots}  VideoLQ/
 PAIRS = DATA / "pairs"                # <dataset>/{specs.jsonl, config.yaml, <ad id>/{gt.mp4, lq_<k>.mp4, meta.json, shots/}}
 ASSETS = DATA / "assets"
 FONTS = ASSETS / "fonts"              # OFL caption fonts + Noto Color Emoji (adup.ugc.fonts)
@@ -28,15 +29,15 @@ FACE_MODEL = ASSETS / "models" / "face_detection_yunet_2023mar.onnx"
 
 STATS = DATA / "stats"
 REAL_STATS = STATS / "real_ads"       # measured on real ads (adup.analysis.*): the targets synthetic data is matched to
-HQ_STATS = STATS / "hq"               # content tags of the HQ pool (adup.analysis.ugc_content)
-BENCHMARK_STATS = STATS / "benchmarks"
+SOURCE_STATS = STATS / "sources"      # content tags of the source pool (adup.analysis.ugc_content)
+EVAL_STATS = STATS / "eval_sets"      # degradation / quality of public sets and of HQ-VSR (DOVE's training set), for reference
 # tables read while making pairs
 LOOK_TABLE = REAL_STATS / "ugc_look.csv"             # per-shot shake / colour / faces of real ads -> camera shake targets
 SHOTS_TABLE = REAL_STATS / "shots.csv"               # shot lengths of real ads -> the director's cut rhythm
-COVERAGE_TABLE = HQ_STATS / "content_coverage.csv"   # theme shares of real ads vs HQ pool -> theme-balanced sampling
-POOL_TABLE = HQ_STATS / "content_pool.csv"           # UltraVideo catalogue themes (from text descriptions)
-CLIPS_TABLE = HQ_STATS / "content_clips.csv"         # downloaded clips' themes (CLIP on the clip itself)
-STILLS_TABLE = HQ_STATS / "content_unsplash.csv"     # Unsplash Lite photos with themes -> stills and UI-screen pictures
+COVERAGE_TABLE = SOURCE_STATS / "content_coverage.csv"   # theme shares of real ads vs HQ pool -> theme-balanced sampling
+POOL_TABLE = SOURCE_STATS / "content_pool.csv"           # UltraVideo catalogue themes (from text descriptions)
+CLIPS_TABLE = SOURCE_STATS / "content_clips.csv"         # downloaded clips' themes (CLIP on the clip itself)
+STILLS_TABLE = SOURCE_STATS / "content_unsplash.csv"     # Unsplash Lite photos with themes -> stills and UI-screen pictures
 
 # ---------------------------------------------------------------- outputs (not in git)
 OUTPUTS = ROOT / "outputs"

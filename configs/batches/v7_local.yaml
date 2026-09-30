@@ -6,16 +6,16 @@ min_free_gb: 10        # 可用内存低于这个值就暂停当前任务
 resume_free_gb: 14     # 暂停后等可用内存回到这个值再续跑
 tasks:
   - name: train          # 1,119 条广告 × 2 个 LQ（重退化 10%）
-    specs: data/pairs/ugc_v7_train/specs.jsonl
+    specs: data/pairs/v7_train/specs.jsonl
     args: [--scale, auto, --variants, "2", --no-shot-files]
   - name: dev            # 50 条 × 8 个 LQ（270/360/540/720 × H.264/VP9，校准版退化）
-    specs: data/pairs/ugc_v7_dev/specs.jsonl
+    specs: data/pairs/v7_dev/specs.jsonl
     args: [--grid, --no-shot-files]
   - name: test           # 100 条 × 8 个 LQ
-    specs: data/pairs/ugc_v7_test/specs.jsonl
+    specs: data/pairs/v7_test/specs.jsonl
     args: [--grid, --no-shot-files]
   - name: test_heavy     # 测试集前 50 条，同一 GT，网格全部用重退化
-    specs: data/pairs/ugc_v7_test/specs.jsonl
-    out: data/pairs/ugc_v7_test_heavy
+    specs: data/pairs/v7_test/specs.jsonl
+    out: data/pairs/v7_test_heavy
     limit: 50
     args: [--grid, --no-shot-files, --set, degrade.grid.rbvsr_prob=1.0]

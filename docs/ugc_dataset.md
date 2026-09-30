@@ -10,8 +10,8 @@ v5 及以前的目标是 2K GT、LQ 540–720，退化是"拍摄 → 剪辑导�
 整条流程：
 
 ```
-HQ 素材 data/hq/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
-  → 预筛 adup/hq/gate.py               有效分辨率、曝光、纹理，并测素材自身运动
+HQ 素材 data/sources/（UltraVideo 4K/8K 视频、Unsplash 照片、合成 App 界面）
+  → 预筛 adup/sources/gate.py               有效分辨率、曝光、纹理，并测素材自身运动
   → 编排 adup/ugc/director.py          每条素材编成一条"广告"：镜头切分、跳剪、放大、版式、录屏、照片、开场卡片
                                        输出 data/pairs/<数据集>/specs.jsonl
   → 生成 adup/make_pairs.py            按 specs 逐条生成配对：
@@ -135,13 +135,13 @@ TikTok 下方约 17–25%、右侧约 11–13%（[TikTok 安全区](https://tika
 | UltraVideo 4K | 已下载 719 条（人物 + 产品展示），全池 8,165 条人物类 | 横屏；可做 16:9 / 4:5 / 1:1 的 2K GT，以及版式竖屏 | CC-BY + 非商业研究 | 主力 |
 | UltraVideo 8K | 已下载 228 条 | 横竖都能做，是 2K+ 竖屏的主要来源 | 同上 | 竖屏 |
 | Unsplash Lite 照片 | 24,847 张短边 ≥ 1440（竖图 10,725 张）；UGC 相关主题约 1,400 张，其中美妆产品 396 张 | 横竖都有 | **允许用于内部商用模型训练** | 照片镜头（产品图、Ken Burns），补美妆、服饰、宠物 |
-| 合成 App 界面 | 按需生成（`adup/hq/ui_screens.py`，4 倍像素 = 1440 宽，6 倍 = 2160 宽） | 竖屏 | 自有 | 录屏镜头，补科技 / App 类 |
+| 合成 App 界面 | 按需生成（`adup/sources/ui_screens.py`，4 倍像素 = 1440 宽，6 倍 = 2160 宽） | 竖屏 | 自有 | 录屏镜头，补科技 / App 类 |
 
-**预筛**（`adup/hq/gate.py`）：在 GT 尺寸下，取最清晰区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB；
+**预筛**（`adup/sources/gate.py`）：在 GT 尺寸下，取最清晰区域做 ×2 下采样再上采样，PSNR 必须 ≤ 38 dB；
 同时检查曝光和纹理。4K 素材在 2K GT 下抽样约 60% 通过（全部 719 条还没跑预筛，留给服务器）；8K 素材横屏 61%、竖屏 31% 通过。
 预筛还会测素材自身运动（`src_shake`、`src_pan`），供导演补抖动时使用。
 
-**内容覆盖**（`data/stats/hq/content_coverage.csv`）：
+**内容覆盖**（`data/stats/sources/content_coverage.csv`）：
 - 美食在 UltraVideo 里严重过剩（4K 3,670 条、8K 661 条），生成时要降采样。
 - 美妆、服饰、宠物的视频少，用照片镜头补。
 - 科技 / App 类用合成录屏补。
@@ -160,7 +160,7 @@ TikTok 下方约 17–25%、右侧约 11–13%（[TikTok 安全区](https://tika
 | 卡片 `ugc/render.py` | 动效设计：品牌色纯色 / 渐变底，产品照片裁成圆形、圆角矩形或通栏（带阴影，缩放淡入；横屏左图右文），标题、logo、CTA 按钮、小字依次动画进场；结尾卡片以 logo 为主。中间卡片 1.2–2.5 秒、不超过全片三分之一；卡片合计超过全片 40% 的编排丢弃重编（素材太短时会出现）。卡片上的文字和其他叠加文字走同一条管线，进 mask.mkv 和 meta.json | 真实广告的品牌卡片、结尾卡片 |
 | 版式 `ugc/render.py` | 模糊填充、黑边 / 纯色边（letterbox）、上下分屏、2×2 拼图、画中画、左右合拍、手机外框录屏 | 9:16 广告用横屏素材时 8% 做成竖屏版式（模糊填充 50%、纯色边 20%、分屏 30%） |
 | 文字 `ugc/text.py` | 按风格抽：字幕、标题（静态或逐镜头换句）、TikTok 原生小字、价格 / 优惠码、品牌 logo（虚构品牌名）、CTA 按钮、贴纸、小字免责声明、箭头圈注。文案用同主题真实广告的文案。标题太长时自动缩小字号，最多 3 行。每个元素从自己的位置分布里取第一个不和已有元素重叠的位置 | 1.3 节的逐风格出现率和文字几何 |
-| 素材自带文字 `hq/source_text.py` | 用文字检测（与语言无关）标出本身带字幕的素材（KwaiVIR 多为快手上传，带中文字幕）；用到这类素材的广告不再加字幕、标题和原生小字，只加 logo、CTA、价格、小字、圈注 | 避免两层字幕重叠 |
+| 素材自带文字 `sources/source_text.py` | 用文字检测（与语言无关）标出本身带字幕的素材（KwaiVIR 多为快手上传，带中文字幕）；用到这类素材的广告不再加字幕、标题和原生小字，只加 logo、CTA、价格、小字、圈注 | 避免两层字幕重叠 |
 | 转场 | 创作者：硬切 80%；品牌：硬切 65%、叠化 20%；甩镜、黑场、白场 | |
 
 数字画面（录屏、幻灯片）没有相机运动，所以不加运动模糊；其余退化和其他画面一样。
@@ -202,18 +202,17 @@ GT 1080p --第一阶段--> --第二阶段--> --最后一步--> LQ 360 / 540 / 72
 - `shots/shot_XXX_{gt,lq_k}.mp4`：多镜头时的逐镜头版本，逐帧精确、无损；
 - `meta.json`：所属划分（split），规格、画幅、GT / LQ 尺寸，每个镜头的渲染信息（裁剪、放置方式、相机参数、版式），色彩参数和目标，文字元素的位置和帧范围，每个变体的退化参数，镜头边界和来源。
 
-本机的配对数据（展示样例 2026-09-29，单进程、在 `adup.memguard` 下生成，峰值内存 3–6 GB）：
+本机已生成的配对数据（2026-09-30，用现有全部素材；目录说明见 `data/README.md`）：
 
 | 目录 | 内容 |
 |---|---|
-| `data/pairs/ugc_v7_examples/` | 36 条广告 × 2 个 LQ，从训练集编排里按覆盖面挑：两种风格、横竖屏、24 / 25 / 30 fps、12 个广告主题、卡片、分屏、拼图、画中画、手机外框、自带字幕的素材；退化按训练设置（72 个 LQ 里 3 个抽到重退化） |
-| `data/pairs/ugc_v7_examples_heavy/` | 其中 9 条的同一 GT，全部用重退化（`--set degrade.rbvsr_prob=1.0`），用来对比日常退化和重退化 |
-| `data/pairs/ugc_v7_examples_grid/` | 3 条测试集广告按网格生成：同一 GT 的 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
-| `data/pairs/ugc_v7_train/` | 用现有全部素材编排的训练集：1,119 条广告 × 2 个 LQ（重退化 10%），每条素材最多出现 3 次 |
-| `data/pairs/ugc_v7_dev/`、`ugc_v7_test/` | 50 / 100 条广告，网格：每条 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
-| `data/pairs/ugc_v7_test_heavy/` | 测试集前 50 条的同一 GT，网格全部用重退化 |
+| `data/pairs/v7_train/` | 训练集：1,119 条广告 × 2 个 LQ = 2,238 对（重退化 10%），用了全部 677 条训练份素材，每条最多出现 3 次 |
+| `data/pairs/v7_dev/`、`v7_test/` | 50 / 100 条广告，网格：每条 8 个 LQ（270 / 360 / 540 / 720p × H.264 / VP9，校准版退化） |
+| `data/pairs/v7_test_heavy/` | 测试集前 50 条的同一 GT，网格全部用重退化 |
+| `data/pairs/examples/` | 展示样例：`main/` 36 条、`heavy/` 其中 9 条的重退化版本、`grid/` 3 条网格 |
 
-这四份由 `configs/batches/v7_local.yaml` 在本机批量生成（2026-09-30 开始，单进程约 12 小时）：`python -m adup.batch run configs/batches/v7_local.yaml` 运行或续跑，`python -m adup.batch status configs/batches/v7_local.yaml --watch 30` 或 `outputs/logs/batch_v7_local/status.html` 看进度。
+这四份正式数据由 `configs/batches/v7_local.yaml` 用 `python -m adup.batch run` 生成（单进程约 13 小时，峰值内存 4–6 GB），
+`python -m adup.batch status configs/batches/v7_local.yaml` 看状态。
 
 展示材料（`adup.analysis.showcase` 生成）在 `outputs/figures/examples/`，打开 `index.html` 可以在一页里看总览图、文字区域对比、
 重退化对比、网格对比和每条广告的 GT / LQ 并排视频。本机跑生成类任务都用 `python -m adup.memguard -- <命令>` 包一层：
@@ -280,7 +279,7 @@ Meta 广告库里同一条广告有 720p 和 360p 两个版本，都是 Meta 从
 - **退化本身已经对齐**：块效应、锐化光晕、有效分辨率都对上了。
 
 所以剩下的真实度差距靠按主题选素材解决：`director --n-ads` 按真实广告的主题占比抽素材，
-主题由 CLIP 直接看片段中间帧判定（`data/stats/hq/content_clips.csv`），非广告内容只占 2%。
+主题由 CLIP 直接看片段中间帧判定（`data/stats/sources/content_clips.csv`），非广告内容只占 2%。
 在已下载的 947 条素材上抽 300 条广告，主题分布为：美妆 20%、家居 16%、科技/App 14%、服饰 12%、
 美食 8%、宠物 7%，和真实广告一致。
 
@@ -340,28 +339,28 @@ Meta 广告库里同一条广告有 720p 和 360p 两个版本，都是 Meta 从
 
 ```bash
 # 素材（服务器上下载，本机只做样例）
-python -m adup.hq.ultravideo 300 --per-source 4 --kind both            # 4K -> data/hq/ultravideo/4k/
-python -m adup.hq.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K -> data/hq/ultravideo/8k/
-python -m adup.hq.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
+python -m adup.sources.ultravideo 300 --per-source 4 --kind both            # 4K -> data/sources/ultravideo/4k/
+python -m adup.sources.ultravideo 1000 --per-source 10 --res 8k --kind both # 8K -> data/sources/ultravideo/8k/
+python -m adup.sources.ui_screens --n 300                                     # 2K 录屏页面；--dpr 6 做 4K
 # 预筛（GT 1080p；可以把清单拆成几份并行跑，脚本支持断点续跑）
-python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --out data/hq/ultravideo/4k/gate_1080.csv
-python -m adup.hq.gate --manifest data/hq/ultravideo/8k/manifest.csv --out data/hq/ultravideo/8k/gate_1080.csv
+python -m adup.sources.gate --manifest data/sources/ultravideo/4k/manifest.csv --out data/sources/ultravideo/4k/gate_1080.csv
+python -m adup.sources.gate --manifest data/sources/ultravideo/8k/manifest.csv --out data/sources/ultravideo/8k/gate_1080.csv
 # 素材自带文字（用到这类素材的广告不再加字幕）
-python -m adup.hq.source_text data/hq/ultravideo/4k/manifest.csv --gate data/hq/ultravideo/4k/gate_1080.csv
+python -m adup.sources.source_text data/sources/ultravideo/4k/manifest.csv --gate data/sources/ultravideo/4k/gate_1080.csv
 # 按画面给素材打主题（CLIP，每条一帧）
-python -m adup.analysis.ugc_content clips data/stats/hq/content_clips.csv data/hq/ultravideo/4k/manifest.csv data/hq/ultravideo/8k/manifest.csv
+python -m adup.analysis.ugc_content clips data/stats/sources/content_clips.csv data/sources/ultravideo/4k/manifest.csv data/sources/ultravideo/8k/manifest.csv
 # 编排：train / dev / test 分开编排（按源视频划分，合成前就分好），按真实广告主题占比抽素材
-M="data/hq/ultravideo/4k data/hq/ultravideo/8k data/hq/kwaivir"
+M="data/sources/ultravideo/4k data/sources/ultravideo/8k data/sources/kwaivir"
 for sp in "train 5000" "dev 50" "test 100"; do set -- $sp
   python -m adup.ugc.director --clips $(for d in $M; do echo $d/manifest.csv; done) \
       --gate $(for d in $M; do echo $d/gate_1080.csv; done) --source-text $(for d in $M; do echo $d/source_text.csv; done) \
-      --stills data/stats/hq/content_unsplash.csv --screens data/hq/ui_screens/manifest.csv \
-      --only-split $1 --n-ads $2 --out data/pairs/ugc_v7_$1/specs.jsonl
+      --stills data/stats/sources/content_unsplash.csv --screens data/sources/ui_screens/manifest.csv \
+      --only-split $1 --n-ads $2 --out data/pairs/v7_$1/specs.jsonl
 done
 # 生成：训练集每条 2 个 LQ（10% 重退化）；dev / test 走网格（4 种尺寸 × 2 种编码，校准版退化）。--shard i/n 可以并行跑 n 个进程
-python -m adup.make_pairs --sequences data/pairs/ugc_v7_train/specs.jsonl --scale auto --variants 2 --no-shot-files --shard 0/8
-python -m adup.make_pairs --sequences data/pairs/ugc_v7_dev/specs.jsonl --grid --no-shot-files
-python -m adup.make_pairs --sequences data/pairs/ugc_v7_test/specs.jsonl --grid --no-shot-files
+python -m adup.make_pairs --sequences data/pairs/v7_train/specs.jsonl --scale auto --variants 2 --no-shot-files --shard 0/8
+python -m adup.make_pairs --sequences data/pairs/v7_dev/specs.jsonl --grid --no-shot-files
+python -m adup.make_pairs --sequences data/pairs/v7_test/specs.jsonl --grid --no-shot-files
 ```
 
 ## 8. 已知不足

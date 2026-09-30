@@ -10,8 +10,8 @@ adup.analysis.ugc_look), so the director only adds the handheld shake that is mi
 make_pairs applies the same gate per shot when a spec was not pre-gated.
 
 Usage (from the repo root):
-  .venv-iqa/bin/python -m adup.hq.gate --manifest data/hq/ultravideo/4k/manifest.csv --gt-short 1080 \
-      --out data/hq/ultravideo/4k/gate_1080.csv
+  .venv-iqa/bin/python -m adup.sources.gate --manifest data/sources/ultravideo/4k/manifest.csv --gt-short 1080 \
+      --out data/sources/ultravideo/4k/gate_1080.csv
 """
 
 import argparse
