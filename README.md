@@ -27,6 +27,7 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     tiktok_topads.py      TikTok Creative Center Top Ads
     meta_adlib_web.py     Meta 广告库网页（不需要 token）
     splits.py             真实广告按广告 id 分 calibration / dev / test -> data/stats/real_ads/splits.csv
+    human_eval_set.py     从 test 份切出真实低质量测试片段（人评和真实赛道用）-> data/eval_sets/real_ugc_v1/
   analysis/            ②  测量：真实广告的统计 -> data/stats/；合成数据的校准 -> outputs/calibration/
     ugc_look.py           逐镜头的"UGC 观感"：手持抖动、平移、景深、色彩、人脸、版式
     ugc_content.py        内容主题（CLIP / 句向量）：真实广告、素材池、照片，以及主题覆盖表
@@ -57,7 +58,8 @@ adup/                     代码（Python 包），在仓库根目录用 `python
     kernels.py            模糊核（来自 BasicSR / mmagic，Apache-2.0）
 configs/pairs/v7.yaml     当前数据集版本的全部参数，分 gt / ugc / degrade 三段；旧版本在 git 历史里
   bench/               ⑥  基准测试：run.py 按统一规则跑各方法（输出 1080p，记录耗时和显存），evaluate.py 在合成集上打分
-                          （画质、文字保真、时间稳定、切换处），evaluate_real.py 在真实广告上打分（无参考 + Meta 360p→720p 半配对）
+                          （画质、文字保真、时间稳定、切换处），evaluate_real.py 在真实广告上打分（无参考 + Meta 360p→720p 半配对），
+                          human_study.py 人评：局域网网页两两比较、Bradley-Terry 汇总
 training/dove/            DOVE：infer.py（按镜头、任意输出尺寸 --out-short 1080）和微调计划
 third_party/              上游仓库，以 git submodule 引入，不做修改：DOVE（训练/推理）、DOVER（视频质量指标）；
                           权重放在各自目录内且不入库（DOVE/pretrained_models/、DOVER/pretrained_weights/DOVER.pth）

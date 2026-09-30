@@ -11,6 +11,9 @@
 Usage (from the repo root):
   .venv-iqa/bin/python -m adup.bench.evaluate_real --runs outputs/bench/real_test --methods bicubic dove \\
       --split test --csv outputs/bench/real_test/results.csv
+  # the real test segments of the human study (adup.real_ads.human_eval_set), 720p anchors cut to the same frames:
+  .venv-iqa/bin/python -m adup.bench.evaluate_real --runs outputs/bench/real_ugc_v1 --methods bicubic realesrgan dove \\
+      --segments data/eval_sets/real_ugc_v1 --csv outputs/bench/real_ugc_v1/results.csv
 Outputs are expected as <runs>/<method>/<input file stem>.mp4 (adup.bench.run --list).
 """
 
@@ -50,17 +53,24 @@ def main():
     ap.add_argument("--runs", required=True)
     ap.add_argument("--methods", nargs="+", required=True)
     ap.add_argument("--split", default="test", help="real-ad split whose SD / HD files define the semi-pairs")
+    ap.add_argument("--segments", help="segment set (adup.real_ads.human_eval_set) instead of whole ads of --split")
     ap.add_argument("--no-dover", action="store_true")
     ap.add_argument("--csv", required=True)
     args = ap.parse_args()
-    sp = pd.read_csv(REAL_STATS / "splits.csv", dtype={"ad_id": str})
-    sp = sp[sp.split == args.split]
     stem = lambda p: os.path.splitext(os.path.basename(p))[0]
-    by_stem = {}
-    for r in sp.itertuples():
-        by_stem[stem(r.video_file)] = ("hd", r)
-        if isinstance(r.video_sd_file, str):
-            by_stem[stem(r.video_sd_file)] = ("sd", r)
+    by_stem = {}                                         # output stem -> (input kind, ad id, source, anchor HD file)
+    if args.segments:
+        seg = pd.read_csv(os.path.join(args.segments, "segments.csv"), dtype={"ad_id": str})
+        for r in seg.itertuples():
+            anchor = os.path.join(args.segments, "anchors_hd", f"{r.segment}.mp4")
+            by_stem[r.segment] = ("sd" if os.path.exists(anchor) else "hd", r.ad_id, r.platform,
+                                  anchor if os.path.exists(anchor) else None)
+    else:
+        sp = pd.read_csv(REAL_STATS / "splits.csv", dtype={"ad_id": str})
+        for r in sp[sp.split == args.split].itertuples():
+            by_stem[stem(r.video_file)] = ("hd", r.ad_id, r.source, None)
+            if isinstance(r.video_sd_file, str):
+                by_stem[stem(r.video_sd_file)] = ("sd", r.ad_id, r.source, str(ROOT / r.video_file))
     dover = None if args.no_dover else load_dover()
     musiq, clipiqa = pyiqa.create_metric("musiq", device="cuda"), pyiqa.create_metric("clipiqa", device="cuda")
     lpips = pyiqa.create_metric("lpips", device="cuda")
@@ -70,19 +80,19 @@ def main():
         for f in sorted(os.listdir(od)) if os.path.isdir(od) else []:
             if not f.endswith(".mp4") or f[:-4] not in by_stem:
                 continue
-            kind, r = by_stem[f[:-4]]
+            kind, ad_id, source, anchor = by_stem[f[:-4]]
             path = os.path.join(od, f)
-            row = {"method": method, "ad_id": r.ad_id, "source": r.source, "input": kind}
+            row = {"method": method, "input_file": f[:-4], "ad_id": ad_id, "source": source, "input": kind}
             if dover:
                 row["dover_tech"], row["dover_aes"], row["dover"] = dover_scores(path, *dover)
             ts = [torch.from_numpy(x).permute(2, 0, 1).float().div(255)[None].cuda() for x in sample_frames(path)]
             with torch.no_grad():
                 row["musiq"] = float(np.mean([musiq(t).item() for t in ts]))
                 row["clipiqa"] = float(np.mean([clipiqa(t).item() for t in ts]))
-                if kind == "sd":
-                    row.update(semi_pair(path, str(ROOT / r.video_file), lpips))
+                if anchor:
+                    row.update(semi_pair(path, anchor, lpips))
             rows.append(row)
-            print(f"{method:12s} {r.ad_id} {kind} " + " ".join(f"{k}={v:.3f}" for k, v in row.items()
+            print(f"{method:12s} {ad_id} {kind} " + " ".join(f"{k}={v:.3f}" for k, v in row.items()
                                                               if isinstance(v, float)), flush=True)
     d = pd.DataFrame(rows)
     d.to_csv(args.csv, index=False)

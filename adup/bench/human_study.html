@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ad Video Comparison</title>
+<style>
+  /* neutral mid-grey surround, as in subjective video tests, so the background does not bias judgements */
+  :root { --bg: #4a4a4a; --panel: #3c3c3c; --fg: #f2f2f2; --muted: #c4c4c4; --line: #5c5c5c;
+          --accent: #7fb2ff; --chosen: #2a5fb8; --warn: #e0a84c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 8px 0 12px; }
+  p, li { color: var(--muted); }
+  input[type=text] { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; max-width: 320px; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 10px 14px; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--chosen); border-color: var(--chosen); font-weight: 600; padding: 12px 20px; }
+  .hidden { display: none !important; }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; flex: 1; max-width: 240px; }
+  .bar i { display: block; height: 6px; background: var(--accent); border-radius: 3px; }
+  .stage { display: flex; gap: 12px; justify-content: center; margin: 12px 0; }
+  .side { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+  .tag { font-weight: 700; font-size: 18px; letter-spacing: .05em; }
+  video { display: block; background: #000; border-radius: 6px; max-width: 100%; }
+  .stack { position: relative; margin: 0 auto; }
+  .stack video { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stack video.off { visibility: hidden; }
+  .switch { display: flex; gap: 8px; justify-content: center; margin: 8px 0 4px; }
+  .switch button { min-width: 96px; font-weight: 700; }
+  .switch button.on { background: var(--chosen); border-color: var(--chosen); }
+  .q { background: var(--panel); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+  .q h3 { font-size: 16px; margin: 0 0 8px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .opts button.sel { background: var(--chosen); border-color: var(--chosen); }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 14px 0 32px; flex-wrap: wrap; }
+  .hint { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <section id="start">
+    <h1>广告视频画质对比</h1>
+    <p>每一组会给你看同一段广告的两个版本（A 和 B），它们是用不同方法把低清视频变清晰的结果。请像平时刷手机广告一样看，然后回答三个问题：</p>
+    <ol>
+      <li>哪个整体画质更好（必须选一个，差不多时凭第一感觉）；</li>
+      <li>文字、价格、logo 有没有哪边看不清，或者内容被改了（比如数字变了、字母变形）；</li>
+      <li>人脸看起来是否自然。</li>
+    </ol>
+    <p>视频会循环播放。手机上一次显示一个版本，点"看 A / 看 B"来回切换对比（两边时间是同步的）；电脑宽屏会并排显示。建议每人做 40 组左右，大约 15 分钟，可以随时停下，下次用同一个名字继续。</p>
+    <p><input id="name" type="text" placeholder="你的名字或代号" autocomplete="nickname"></p>
+    <p><button class="primary" id="go">开始</button></p>
+  </section>
+
+  <section id="trial" class="hidden">
+    <div class="top"><span id="count"></span><div class="bar"><i id="barfill"></i></div></div>
+
+    <div id="sideview" class="stage">
+      <div class="side"><span class="tag">A</span><video id="va" muted loop playsinline preload="auto"></video></div>
+      <div class="side"><span class="tag">B</span><video id="vb" muted loop playsinline preload="auto"></video></div>
+    </div>
+
+    <div id="toggleview" class="hidden">
+      <div class="switch"><button id="showA" class="on">看 A</button><button id="showB">看 B</button></div>
+      <div class="stack" id="stack"></div>
+      <div class="hint" style="text-align:center">点画面也可以切换 A / B</div>
+    </div>
+
+    <div class="q" data-q="choice"><h3>1. 哪个整体画质更好？</h3>
+      <div class="opts"><button data-v="left">A 更好</button><button data-v="right">B 更好</button></div></div>
+    <div class="q" data-q="text"><h3>2. 文字、价格、logo：有没有哪边看不清或内容被改了？</h3>
+      <div class="opts"><button data-v="left">A 有问题</button><button data-v="right">B 有问题</button><button data-v="both">两边都有</button><button data-v="none">都没问题</button><button data-v="na">画面里没有字</button></div></div>
+    <div class="q" data-q="face"><h3>3. 人脸看起来自然吗？</h3>
+      <div class="opts"><button data-v="left">A 不自然</button><button data-v="right">B 不自然</button><button data-v="both">两边都不自然</button><button data-v="none">都自然</button><button data-v="na">没有人脸</button></div></div>
+
+    <div class="foot">
+      <button id="replay">从头播放</button>
+      <span class="hint" id="wait"></span>
+      <button class="primary" id="submit" disabled>提交，下一组</button>
+    </div>
+  </section>
+
+  <section id="done" class="hidden">
+    <h1>谢谢！</h1>
+    <p id="donemsg"></p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let rater = "", trial = null, answers = {}, t0 = 0, mode = "side", syncTimer = null;
+try { $("name").value = localStorage.getItem("rater") || ""; } catch (e) {}
+
+function wide() { return window.innerWidth >= 900 && window.innerWidth > window.innerHeight; }
+
+async function next() {
+  const r = await fetch(`api/next?rater=${encodeURIComponent(rater)}`);
+  trial = await r.json();
+  if (trial.done) { show("done"); $("donemsg").textContent = `所有对比都评完了（你一共评了 ${trial.judged} 组）。`; return; }
+  answers = {}; t0 = performance.now();
+  document.querySelectorAll(".opts button").forEach(b => b.classList.remove("sel"));
+  const n = trial.judged + 1, per = trial.per_session;
+  $("count").textContent = n <= per ? `第 ${n} 组 / 建议 ${per} 组` : `第 ${n} 组（已超过建议的 ${per} 组，可以随时结束）`;
+  $("barfill").style.width = `${Math.min(100, 100 * trial.judged / per)}%`;
+  setup(trial.left, trial.right, trial.aspect);
+  show("trial"); update();
+}
+
+function setup(ua, ub, size) {
+  clearInterval(syncTimer);
+  mode = wide() ? "side" : "toggle";
+  const [w, h] = size;
+  let a, b;
+  if (mode === "side") {
+    $("sideview").classList.remove("hidden"); $("toggleview").classList.add("hidden");
+    a = $("va"); b = $("vb");
+    const maxH = window.innerHeight * 0.62, maxW = ($("sideview").clientWidth - 12) / 2;
+    const s = Math.min(maxH / h, maxW / w);
+    [a, b].forEach(v => { v.style.width = `${w * s}px`; v.style.height = `${h * s}px`; });
+  } else {
+    $("sideview").classList.add("hidden"); $("toggleview").classList.remove("hidden");
+    const st = $("stack"); st.innerHTML = "";
+    const maxH = window.innerHeight * 0.58, maxW = Math.min(window.innerWidth - 32, 1100);
+    const s = Math.min(maxH / h, maxW / w);
+    st.style.width = `${w * s}px`; st.style.height = `${h * s}px`;
+    a = document.createElement("video"); b = document.createElement("video");
+    [a, b].forEach(v => { v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto"; st.appendChild(v); });
+    st.onclick = () => view(a.classList.contains("off") ? "A" : "B");
+    $("showA").onclick = () => view("A"); $("showB").onclick = () => view("B");
+    view("A");
+  }
+  a.src = ua; b.src = ub;
+  let ready = 0;
+  const go = () => { if (++ready === 2) { a.currentTime = 0; b.currentTime = 0; a.play(); b.play(); } };
+  a.oncanplay = go; b.oncanplay = go;
+  syncTimer = setInterval(() => {                      // keep B on A's clock
+    if (!a.paused && Math.abs(b.currentTime - a.currentTime) > 0.08) b.currentTime = a.currentTime;
+    if (b.paused && !a.paused) b.play();
+    update();
+  }, 200);
+  $("replay").onclick = () => { a.currentTime = 0; b.currentTime = 0; a.play(); b.play(); };
+  function view(which) {
+    a.classList.toggle("off", which !== "A"); b.classList.toggle("off", which !== "B");
+    $("showA").classList.toggle("on", which === "A"); $("showB").classList.toggle("on", which === "B");
+  }
+}
+
+function update() {
+  const watched = (performance.now() - t0) / 1000, need = 4;
+  const complete = ["choice", "text", "face"].every(k => answers[k]);
+  $("submit").disabled = !(complete && watched >= need);
+  $("wait").textContent = watched < need ? `请至少看 ${Math.ceil(need - watched)} 秒` : (complete ? "" : "请回答全部三个问题");
+}
+
+document.querySelectorAll(".q").forEach(q => q.querySelectorAll("button").forEach(b => b.onclick = () => {
+  q.querySelectorAll("button").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel"); answers[q.dataset.q] = b.dataset.v; update();
+}));
+
+$("submit").onclick = async () => {
+  $("submit").disabled = true;
+  const body = { rater, token: trial.token, choice: answers.choice, text: answers.text, face: answers.face,
+                 watch_s: (performance.now() - t0) / 1000, mode };
+  const r = await fetch("api/vote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.status === 409) { next(); return; }                  // trial expired (server restarted): skip to a new one
+  if (!r.ok) { alert("提交失败，请重试"); $("submit").disabled = false; return; }
+  window.scrollTo(0, 0); next();
+};
+
+$("go").onclick = () => {
+  rater = $("name").value.trim();
+  if (!rater) { $("name").focus(); return; }
+  try { localStorage.setItem("rater", rater); } catch (e) {}
+  next();
+};
+
+function show(id) { ["start", "trial", "done"].forEach(s => $(s).classList.toggle("hidden", s !== id)); }
+</script>
+</body>
+</html>

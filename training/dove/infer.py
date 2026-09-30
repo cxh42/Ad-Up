@@ -36,7 +36,12 @@ DOVE = ROOT / "third_party" / "DOVE"
 sys.path[:0] = [str(ROOT), str(DOVE)]
 sys.modules.setdefault("pyiqa", types.ModuleType("pyiqa"))     # upstream imports it for metrics only
 
-from diffusers import CogVideoXDPMScheduler, CogVideoXPipeline      # noqa: E402
+from diffusers import (  # noqa: E402
+    AutoencoderKLCogVideoX,
+    CogVideoXDPMScheduler,
+    CogVideoXPipeline,
+    CogVideoXTransformer3DModel,
+)
 from safetensors.torch import load_file                             # noqa: E402
 
 import inference_script as upstream                                 # noqa: E402
@@ -80,7 +85,12 @@ def pass_frames(h, w):
 
 
 def load_pipe(model_path, vae_tiling):
-    pipe = CogVideoXPipeline.from_pretrained(model_path, text_encoder=None, tokenizer=None, torch_dtype=torch.bfloat16)
+    # transformer and VAE load straight onto the GPU; through the CPU the 5B weights peak at ~12 GB of RAM
+    kw = {"torch_dtype": torch.bfloat16, "device_map": "cuda"}
+    transformer = CogVideoXTransformer3DModel.from_pretrained(model_path, subfolder="transformer", **kw)
+    vae = AutoencoderKLCogVideoX.from_pretrained(model_path, subfolder="vae", **kw)
+    pipe = CogVideoXPipeline.from_pretrained(model_path, transformer=transformer, vae=vae, text_encoder=None, tokenizer=None,
+                                             torch_dtype=torch.bfloat16)
     for blk in pipe.transformer.transformer_blocks:
         blk.ff = ChunkedFF(blk.ff, 16384)
     pipe.scheduler = CogVideoXDPMScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")

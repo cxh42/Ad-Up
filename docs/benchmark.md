@@ -21,6 +21,7 @@
   重退化子集另跑：`--grid --set degrade.grid.rbvsr_prob=1.0`（RealBasicVSR 原版范围，和训练集同分布）。
   建议规模：dev 50 条、test 100 条广告（各 8 个 LQ）。
 - **真实**：`data/stats/real_ads/splits.csv` 的 test 份（按广告 id 固定划分）；列表在 `data/stats/real_ads/groups/test_{hd,sd}.txt`。
+  从中切出的真实低质量测试片段 `data/eval_sets/real_ugc_v1/`（36 段，每段 5 秒）是人评和真实赛道 C / D 的主测试集，见第 5 节。
 - 每个 LQ 的因素都在 meta.json：尺寸 / 倍数、编码、退化强度（preset）、画幅、主题、镜头数、文字元素，结果可以按任意因素拆开。
 
 ## 3. 统一规则（`adup/bench/run.py`）
@@ -59,12 +60,29 @@ OCR 以后可以换更强的（如 PaddleOCR），减少它本身的误差。
 - 再转码后的质量：输出按典型码率重编码（H.264 / AV1，1080p 与 720p 两档）后再打分，以及同画质下的码率节省；
 - 帧间扭曲误差（光流）。
 
-## 5. 人评（计划）
+## 5. 真实低质量测试集与人评
 
-- 真实 test 份挑约 50 段，5–6 个方法，两两比较（2AFC），Bradley-Terry 汇总成排名；
-- 分开问：画面哪个更好；文字、价格、logo 有没有看不清或被改；人脸是否自然；
-- 手机尺寸竖屏全屏播放，贴近用户实际观看；
-- 人评结果同时用来检验自动指标（SRCC / PLCC）。
+**测试片段**（`adup/real_ads/human_eval_set.py` → `data/eval_sets/real_ugc_v1/`）。会上说的"用户真实会看到的 360p 模糊视频"：
+- 真实广告 test 份里所有带 Meta 360p 版本的广告（28 段，去掉了同一素材换广告 id 重复投放的 1 条），同时切出 Meta 720p 版本的同一帧作参照；
+- TikTok 576p / 360p 的广告，每个行业 1 条（8 段）。
+- 每条广告选 5 秒：优先有文字、人脸、有运动的片段，避开黑场、静止大字卡片和频繁切换（按文字检测、人脸检测、帧差打分）。
+  36 段里 86% 有文字、75% 有人脸。无损切出，只带平台自己的压缩。
+- 目录：`inputs/`（给方法的输入）、`anchors_hd/`（Meta 720p 同帧，28 段）、`segments.csv`（来源、起止帧、选段依据）、
+  `inputs.txt`（`adup.bench.run --list` 用）。
+
+**人评**（`adup/bench/human_study.py`，网页在 `human_study.html`）：
+- 两两比较（2AFC）：同一段广告的两个版本，左右随机、方法名隐藏（视频文件名打乱，页面拿不到方法名）。每组问三个问题：
+  整体画质哪个更好（必选）；文字、价格、logo 有没有哪边看不清或被改；人脸是否自然。
+- 参加比较的条件：各方法的 1080p 输出，加 `meta_hd`（Meta 自己的 720p 同帧，双三次放大到 1080p），作为"真实的更高画质"参照。
+- 在本机起一个网页服务，同一局域网的手机、电脑都能打开。手机上一次显示一个版本，点"看 A / 看 B"切换（两边时间同步）；
+  宽屏并排显示。中灰背景，至少看 4 秒才能提交。每人建议 40 组（约 15 分钟），用同一个名字可以分几次做完。
+- 服务端给每位评分人发"票数最少、自己还没评过"的组，票数在各组之间均匀分布；投票追加写入 `votes.csv`。
+- 分析：Bradley-Terry 强度（以 bicubic 为 0，500 次自助法 95% 区间），分全部 / Meta / TikTok；两两胜率；
+  各条件被标出文字问题、人脸问题的比例；评分一致性。结果写入 `results.md`、`results.json`。
+- 规模：4 个条件时共 192 组对比（Meta 片段 6 组 × 28，TikTok 3 组 × 8）。按经验，5–8 人 × 40 组（200–320 票）够排出 4 个方法的名次；
+  以后加入微调后的模型，重新 build 一次，已有的票仍然有效。
+- 同一批片段也用无参考指标打分（`evaluate_real.py --segments`：DOVER、MUSIQ、CLIP-IQA，Meta 片段另算和 720p 参照的
+  PSNR / SSIM / LPIPS），人评结果用来检验这些自动指标（SRCC / PLCC）。
 
 ## 6. 方法
 
@@ -92,7 +110,17 @@ OCR 以后可以换更强的（如 PaddleOCR），减少它本身的误差。
 # 打分
 .venv-iqa/bin/python -m adup.bench.evaluate --pairs data/pairs/v7_dev --runs outputs/bench/v7_dev \
     --methods bicubic lanczos realesrgan dove --csv outputs/bench/v7_dev/results.csv
-# 真实视频：跑方法，再做无参考打分和 360p→720p 半配对比较
+# 真实低质量测试片段：切片段 -> 跑方法 -> 自动指标 -> 人评
+.venv-iqa/bin/python -m adup.real_ads.human_eval_set
+.venv-iqa/bin/python -m adup.bench.run --method realesrgan --list data/eval_sets/real_ugc_v1/inputs.txt --out outputs/bench/real_ugc_v1
+.venv-dove/bin/python training/dove/infer.py --out outputs/bench/real_ugc_v1/dove --out-short 1080 $(cat data/eval_sets/real_ugc_v1/inputs.txt)
+.venv-iqa/bin/python -m adup.bench.evaluate_real --runs outputs/bench/real_ugc_v1 --methods bicubic realesrgan dove \
+    --segments data/eval_sets/real_ugc_v1 --csv outputs/bench/real_ugc_v1/results.csv
+.venv-iqa/bin/python -m adup.bench.human_study build --segments data/eval_sets/real_ugc_v1 --runs outputs/bench/real_ugc_v1 \
+    --methods bicubic realesrgan dove --anchor --out outputs/human_study/real_ugc_v1
+.venv-iqa/bin/python -m adup.bench.human_study serve outputs/human_study/real_ugc_v1      # 评分人打开它打印的网址
+.venv-iqa/bin/python -m adup.bench.human_study analyze outputs/human_study/real_ugc_v1
+# 真实视频（整条广告）：跑方法，再做无参考打分和 360p→720p 半配对比较
 .venv-iqa/bin/python -m adup.bench.run --method dove --list data/stats/real_ads/groups/test_sd.txt --out outputs/bench/real_test
 .venv-iqa/bin/python -m adup.bench.evaluate_real --runs outputs/bench/real_test --methods bicubic dove --split test \
     --csv outputs/bench/real_test/results.csv

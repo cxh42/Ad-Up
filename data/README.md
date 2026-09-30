@@ -25,7 +25,7 @@ data/
 |---|---|
 | 训练 / 微调模型 | `pairs/v7_train/` |
 | 调参、选模型 | `pairs/v7_dev/`，真实视频用 `real_ads/` 的 dev 份 |
-| 报最终结果 | `pairs/v7_test/`、`pairs/v7_test_heavy/`，真实视频用 `real_ads/` 的 test 份 |
+| 报最终结果 | `pairs/v7_test/`、`pairs/v7_test_heavy/`，真实视频用 `eval_sets/real_ugc_v1/`（切自 `real_ads/` 的 test 份，人评也用它） |
 | 给人看例子 | `outputs/figures/examples/index.html`（由 `pairs/examples/` 生成） |
 
 真实广告属于哪一份，看 `stats/real_ads/splits.csv`，文件列表在 `stats/real_ads/groups/<份>_{hd,sd}.txt`。
@@ -118,6 +118,7 @@ v7_train/
 | `KwaiVIR/val_input/`、`test_data/` | KwaiVIR 比赛的验证、测试输入 | 同上 |
 | `KwaiVIR/shots/` | 野外视频的镜头边界 | 按镜头推理 |
 | `VideoLQ/` | 真实世界视频超分基准（DOVE 论文用过） | 核对我们跑 DOVE 的结果和论文一致 |
+| `real_ugc_v1/` | **我们的真实低质量测试集**：从 `real_ads/` 的 test 份切出的 36 段 5 秒片段（28 段 Meta 360p + 8 段 TikTok 576p / 360p）；`inputs/` 给方法，`anchors_hd/` 是 Meta 720p 同帧参照，`segments.csv` 记录来源和起止帧 | 人评、真实赛道的自动指标（`docs/benchmark.md` 第 5 节） |
 
 KwaiVIR 的 200 条高清片段是 GT 素材，已移到 `sources/kwaivir/clips/`；比赛自带的合成 LQ 用不上，已删。
 
