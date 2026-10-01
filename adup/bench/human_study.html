@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -9,7 +9,7 @@
   :root { --bg: #4a4a4a; --panel: #3c3c3c; --fg: #f2f2f2; --muted: #c4c4c4; --line: #5c5c5c;
           --accent: #7fb2ff; --chosen: #2a5fb8; --warn: #e0a84c; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 22px; margin: 8px 0 12px; }
   p, li { color: var(--muted); }
@@ -42,16 +42,16 @@
 <body>
 <main>
   <section id="start">
-    <h1>广告视频画质对比</h1>
-    <p>每一组会给你看同一段广告的两个版本（A 和 B），它们是用不同方法把低清视频变清晰的结果。请像平时刷手机广告一样看，然后回答三个问题：</p>
+    <h1 data-i18n="title"></h1>
+    <p data-i18n="intro"></p>
     <ol>
-      <li>哪个整体画质更好（必须选一个，差不多时凭第一感觉）；</li>
-      <li>文字、价格、logo 有没有哪边看不清，或者内容被改了（比如数字变了、字母变形）；</li>
-      <li>人脸看起来是否自然。</li>
+      <li data-i18n="li1"></li>
+      <li data-i18n="li2"></li>
+      <li data-i18n="li3"></li>
     </ol>
-    <p>视频会循环播放。手机上一次显示一个版本，点"看 A / 看 B"来回切换对比（两边时间是同步的）；电脑宽屏会并排显示。建议每人做 40 组左右，大约 15 分钟，可以随时停下，下次用同一个名字继续。</p>
-    <p><input id="name" type="text" placeholder="你的名字或代号" autocomplete="nickname"></p>
-    <p><button class="primary" id="go">开始</button></p>
+    <p data-i18n="how"></p>
+    <p><input id="name" type="text" autocomplete="nickname"></p>
+    <p><button class="primary" id="go" data-i18n="start"></button></p>
   </section>
 
   <section id="trial" class="hidden">
@@ -63,30 +63,72 @@
     </div>
 
     <div id="toggleview" class="hidden">
-      <div class="switch"><button id="showA" class="on">看 A</button><button id="showB">看 B</button></div>
+      <div class="switch"><button id="showA" class="on" data-i18n="showA"></button><button id="showB" data-i18n="showB"></button></div>
       <div class="stack" id="stack"></div>
-      <div class="hint" style="text-align:center">点画面也可以切换 A / B</div>
+      <div class="hint" style="text-align:center" data-i18n="tap"></div>
     </div>
 
-    <div class="q" data-q="choice"><h2>1. 哪个整体画质更好？</h2>
-      <div class="opts"><button data-v="left">A 更好</button><button data-v="right">B 更好</button></div></div>
-    <div class="q" data-q="text"><h2>2. 文字、价格、logo：有没有哪边看不清或内容被改了？</h2>
-      <div class="opts"><button data-v="left">A 有问题</button><button data-v="right">B 有问题</button><button data-v="both">两边都有</button><button data-v="none">都没问题</button><button data-v="na">画面里没有字</button></div></div>
-    <div class="q" data-q="face"><h2>3. 人脸看起来自然吗？</h2>
-      <div class="opts"><button data-v="left">A 不自然</button><button data-v="right">B 不自然</button><button data-v="both">两边都不自然</button><button data-v="none">都自然</button><button data-v="na">没有人脸</button></div></div>
+    <div class="q" data-q="choice"><h2 data-i18n="q1"></h2>
+      <div class="opts"><button data-v="left" data-i18n="q1a"></button><button data-v="right" data-i18n="q1b"></button></div></div>
+    <div class="q" data-q="text"><h2 data-i18n="q2"></h2>
+      <div class="opts"><button data-v="left" data-i18n="q2a"></button><button data-v="right" data-i18n="q2b"></button><button data-v="both" data-i18n="q2both"></button><button data-v="none" data-i18n="q2none"></button><button data-v="na" data-i18n="q2na"></button></div></div>
+    <div class="q" data-q="face"><h2 data-i18n="q3"></h2>
+      <div class="opts"><button data-v="left" data-i18n="q3a"></button><button data-v="right" data-i18n="q3b"></button><button data-v="both" data-i18n="q3both"></button><button data-v="none" data-i18n="q3none"></button><button data-v="na" data-i18n="q3na"></button></div></div>
 
     <div class="foot">
-      <button id="replay">从头播放</button>
+      <button id="replay" data-i18n="replay"></button>
       <span class="hint" id="wait"></span>
-      <button class="primary" id="submit" disabled>提交，下一组</button>
+      <button class="primary" id="submit" disabled data-i18n="submit"></button>
     </div>
   </section>
 
   <section id="done" class="hidden">
-    <h1>谢谢！</h1>
+    <h1 data-i18n="thanks"></h1>
     <p id="donemsg"></p>
   </section>
 </main>
+<script>
+// Interface text: English by default, Chinese with ?lang=zh. Votes and the protocol are the same in both.
+const T = {
+  en: {
+    title: "Ad video quality comparison",
+    intro: "Each round shows two versions, A and B, of the same ad. Each was made sharper from a low-resolution video by a different method. Watch them as you would watch an ad on your phone, then answer three questions:",
+    li1: "Which looks better overall? Pick one; if they look alike, go with your first impression.",
+    li2: "Is any text, price or logo unreadable or changed in A or B? For example, a digit or letter that differs.",
+    li3: "Do the faces look natural?",
+    how: "The videos loop. On a phone you see one version at a time: tap “Show A” or “Show B” to switch; both stay in sync. On a wide screen they play side by side. About 40 rounds take roughly 15 minutes. You can stop at any time and continue later with the same name.",
+    name: "Your name or nickname", start: "Start", showA: "Show A", showB: "Show B", tap: "Tap the video to switch between A and B",
+    q1: "1. Which looks better overall?", q1a: "A is better", q1b: "B is better",
+    q2: "2. Text, prices, logos: is anything unreadable or changed?", q2a: "A has a problem", q2b: "B has a problem", q2both: "Both do", q2none: "Neither", q2na: "No text on screen",
+    q3: "3. Do the faces look natural?", q3a: "A looks unnatural", q3b: "B looks unnatural", q3both: "Both unnatural", q3none: "Both natural", q3na: "No faces",
+    replay: "Replay", submit: "Submit and continue", thanks: "Thank you!",
+    done: (n) => `All comparisons are done. You rated ${n} rounds.`,
+    count: (n, per) => n <= per ? `Round ${n} of ${per} suggested` : `Round ${n}: past the suggested ${per}, you can stop at any time`,
+    wait: (s) => `Please watch at least ${s} more seconds`, answer: "Please answer all three questions", failed: "Submission failed, please try again.",
+  },
+  zh: {
+    title: "广告视频画质对比",
+    intro: "每一组会给你看同一段广告的两个版本（A 和 B），它们是用不同方法把低清视频变清晰的结果。请像平时刷手机广告一样看，然后回答三个问题：",
+    li1: "哪个整体画质更好（必须选一个，差不多时凭第一感觉）；",
+    li2: "文字、价格、logo 有没有哪边看不清，或者内容被改了（比如数字变了、字母变形）；",
+    li3: "人脸看起来是否自然。",
+    how: "视频会循环播放。手机上一次显示一个版本，点“看 A / 看 B”来回切换对比（两边时间是同步的）；电脑宽屏会并排显示。建议每人做 40 组左右，大约 15 分钟，可以随时停下，下次用同一个名字继续。",
+    name: "你的名字或代号", start: "开始", showA: "看 A", showB: "看 B", tap: "点画面也可以切换 A / B",
+    q1: "1. 哪个整体画质更好？", q1a: "A 更好", q1b: "B 更好",
+    q2: "2. 文字、价格、logo：有没有哪边看不清或内容被改了？", q2a: "A 有问题", q2b: "B 有问题", q2both: "两边都有", q2none: "都没问题", q2na: "画面里没有字",
+    q3: "3. 人脸看起来自然吗？", q3a: "A 不自然", q3b: "B 不自然", q3both: "两边都不自然", q3none: "都自然", q3na: "没有人脸",
+    replay: "从头播放", submit: "提交，下一组", thanks: "谢谢！",
+    done: (n) => `所有对比都评完了（你一共评了 ${n} 组）。`,
+    count: (n, per) => n <= per ? `第 ${n} 组 / 建议 ${per} 组` : `第 ${n} 组（已超过建议的 ${per} 组，可以随时结束）`,
+    wait: (s) => `请至少看 ${s} 秒`, answer: "请回答全部三个问题", failed: "提交失败，请重试",
+  },
+};
+const LANG = new URLSearchParams(location.search).get("lang") === "zh" ? "zh" : "en";
+const L = T[LANG];
+document.documentElement.lang = LANG;
+document.querySelectorAll("[data-i18n]").forEach(e => { e.textContent = L[e.dataset.i18n]; });
+document.getElementById("name").placeholder = L.name;
+</script>
 <script>
 const $ = (id) => document.getElementById(id);
 let rater = "", trial = null, answers = {}, t0 = 0, mode = "side", syncTimer = null;
@@ -97,11 +139,11 @@ function wide() { return window.innerWidth >= 900 && window.innerWidth > window.
 async function next() {
   const r = await fetch(`api/next?rater=${encodeURIComponent(rater)}`);
   trial = await r.json();
-  if (trial.done) { show("done"); $("donemsg").textContent = `所有对比都评完了（你一共评了 ${trial.judged} 组）。`; return; }
+  if (trial.done) { show("done"); $("donemsg").textContent = L.done(trial.judged); return; }
   answers = {}; t0 = performance.now();
   document.querySelectorAll(".opts button").forEach(b => b.classList.remove("sel"));
   const n = trial.judged + 1, per = trial.per_session;
-  $("count").textContent = n <= per ? `第 ${n} 组 / 建议 ${per} 组` : `第 ${n} 组（已超过建议的 ${per} 组，可以随时结束）`;
+  $("count").textContent = L.count(n, per);
   $("barfill").style.width = `${Math.min(100, 100 * trial.judged / per)}%`;
   setup(trial.left, trial.right, trial.aspect);
   show("trial"); update();
@@ -150,7 +192,7 @@ function update() {
   const watched = (performance.now() - t0) / 1000, need = 4;
   const complete = ["choice", "text", "face"].every(k => answers[k]);
   $("submit").disabled = !(complete && watched >= need);
-  $("wait").textContent = watched < need ? `请至少看 ${Math.ceil(need - watched)} 秒` : (complete ? "" : "请回答全部三个问题");
+  $("wait").textContent = watched < need ? L.wait(Math.ceil(need - watched)) : (complete ? "" : L.answer);
 }
 
 document.querySelectorAll(".q").forEach(q => q.querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -164,7 +206,7 @@ $("submit").onclick = async () => {
                  watch_s: (performance.now() - t0) / 1000, mode };
   const r = await fetch("api/vote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (r.status === 409) { next(); return; }                  // trial expired (server restarted): skip to a new one
-  if (!r.ok) { alert("提交失败，请重试"); $("submit").disabled = false; return; }
+  if (!r.ok) { alert(L.failed); $("submit").disabled = false; return; }
   window.scrollTo(0, 0); next();
 };
 
